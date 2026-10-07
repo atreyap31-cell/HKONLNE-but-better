@@ -14,4 +14,4 @@ Press F2 for the debug panel:
     Saves: import/download userN.dat (same format as Steam 1.5.78), delete a slot, add the premade Godseeker save to a free slot
     System: GPU/browser info, copyable perf report, clear the game cache
 
-Loading streams the 884 MB data file into Unity part by part (from cache or network), so peak memory during load is ~1.7 GB instead of ~3.1 GB.
+Loading streams the 884 MB data file into Unity part by part (from cache or network), so peak memory during load is ~1.7 GB instead of ~3.1 GB. https://atreyap31-cell.github.io/HKONLNE-but-better/
