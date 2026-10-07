@@ -1,0 +1,1705 @@
+<!DOCTYPE html>
+<html lang="en-us">
+
+<head>
+    <base href="https://cdn.jsdelivr.net/gh/aukak/hollow-knight@2fc2e7149f0d5b2609b135ab48f00fd973930635/">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Hollow Knight</title>
+    <link rel="shortcut icon" href="TemplateData/favicon.ico">
+    <link rel="stylesheet" href="TemplateData/style.css">
+    <style>
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            overflow: hidden;
+            background: #231F20;
+        }
+
+        #unity-container {
+            width: 100%;
+            height: 100%;
+            position: fixed;
+            top: 0;
+            left: 0;
+        }
+
+        #unity-canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* ---------- debug overlay ---------- */
+        #dbg {
+            position: fixed;
+            top: 8px;
+            left: 8px;
+            z-index: 1000000;
+            font: 12px/1.35 ui-monospace, Consolas, monospace;
+            color: #e8e6e3;
+            user-select: none;
+        }
+
+        #dbg-chip {
+            display: inline-flex;
+            gap: 8px;
+            align-items: center;
+            padding: 3px 8px;
+            background: rgba(10, 10, 14, .72);
+            border: 1px solid rgba(255, 255, 255, .15);
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        #dbg-chip b { color: #9fd3ff; font-weight: 600; }
+        #dbg-chip .bad { color: #ff8a80; }
+        #dbg-chip .ok { color: #b9f6ca; }
+
+        #dbg-panel {
+            display: none;
+            margin-top: 6px;
+            width: 300px;
+            max-height: calc(100vh - 60px);
+            overflow: auto;
+            background: rgba(10, 10, 14, .9);
+            border: 1px solid rgba(255, 255, 255, .15);
+            border-radius: 8px;
+        }
+
+        #dbg.open #dbg-panel { display: block; }
+
+        #dbg-tabs { display: flex; border-bottom: 1px solid rgba(255, 255, 255, .12); }
+
+        #dbg-tabs button {
+            flex: 1;
+            background: none;
+            border: 0;
+            color: #aaa;
+            padding: 6px 0;
+            font: inherit;
+            cursor: pointer;
+        }
+
+        #dbg-tabs button.on { color: #fff; box-shadow: inset 0 -2px #9fd3ff; }
+
+        .dbg-sec { display: none; padding: 8px 10px; }
+        .dbg-sec.on { display: block; }
+        .dbg-row { display: flex; justify-content: space-between; gap: 8px; padding: 1px 0; }
+        .dbg-row span:first-child { color: #999; }
+        .dbg-row span:last-child { text-align: right; word-break: break-word; }
+
+        #dbg canvas { display: block; width: 100%; height: 48px; margin: 6px 0; background: rgba(255, 255, 255, .04); border-radius: 4px; }
+
+        #dbg .btn {
+            background: rgba(255, 255, 255, .08);
+            border: 1px solid rgba(255, 255, 255, .18);
+            color: #eee;
+            border-radius: 4px;
+            padding: 3px 7px;
+            margin: 2px 2px 2px 0;
+            font: inherit;
+            cursor: pointer;
+        }
+
+        #dbg .btn:hover { background: rgba(255, 255, 255, .16); }
+        #dbg .btn.warn { border-color: rgba(255, 138, 128, .5); }
+        #dbg select, #dbg input[type=range] { width: 100%; font: inherit; }
+        #dbg .note { color: #888; font-size: 11px; margin: 4px 0; }
+        #dbg .files div { display: flex; justify-content: space-between; align-items: center; gap: 4px; }
+        #dbg .files code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        #dbg h4 { margin: 8px 0 3px; font-size: 11px; color: #9fd3ff; text-transform: uppercase; letter-spacing: .05em; }
+    </style>
+</head>
+
+<body>
+    <div id="loading-text" style="color: white; font-size: 48px; font-family: cursive; text-align: center; margin-top: 20px;"> LOADING... </div>
+    <div hidden id="unity-container" class="unity-desktop">
+        <canvas id="unity-canvas" tabindex="-1"></canvas>
+        <div id="unity-loading-bar">
+            <div id="unity-logo"></div>
+            <div id="unity-progress-bar-empty">
+                <div id="unity-progress-bar-full"></div>
+            </div>
+        </div>
+        <div id="unity-mobile-warning"> WebGL builds are not supported on mobile devices. </div>
+    </div>
+
+    <!-- ===================== debug overlay (F2 to toggle) ===================== -->
+    <div id="dbg">
+        <div id="dbg-chip" title="F2: toggle panel">
+            <span>DBG</span><b id="dbg-fps">--</b><span id="dbg-ms">-- ms</span>
+        </div>
+        <div id="dbg-panel">
+            <div id="dbg-tabs">
+                <button data-t="perf" class="on">Perf</button>
+                <button data-t="disp">Display</button>
+                <button data-t="cheat">Cheats</button>
+                <button data-t="save">Saves</button>
+                <button data-t="sys">System</button>
+            </div>
+            <div class="dbg-sec on" data-s="perf">
+                <canvas id="dbg-graph" width="560" height="96"></canvas>
+                <div class="dbg-row"><span>Game FPS</span><span id="p-gfps">--</span></div>
+                <div class="dbg-row"><span>Frame avg / 1% low</span><span id="p-avg">--</span></div>
+                <div class="dbg-row"><span>Worst frame (5s)</span><span id="p-worst">--</span></div>
+                <div class="dbg-row"><span>Hitches &gt;50ms (5s)</span><span id="p-hitch">--</span></div>
+                <div class="dbg-row"><span>Main loop</span><span id="p-loop">--</span></div>
+                <div class="dbg-row"><span>Render size</span><span id="p-res">--</span></div>
+                <div class="dbg-row"><span>JS heap</span><span id="p-heap">--</span></div>
+                <div class="dbg-row"><span>WASM heap</span><span id="p-wasm">--</span></div>
+                <div class="dbg-row"><span>Load time</span><span id="p-load">--</span></div>
+                <button class="btn" id="p-reset">Reset stats</button>
+                <button class="btn" id="p-bench">30s benchmark</button>
+                <div class="note" id="p-bench-out"></div>
+            </div>
+            <div class="dbg-sec" data-s="disp">
+                <h4>Render scale <span id="d-scale-v"></span></h4>
+                <input type="range" id="d-scale" min="0.25" max="3" step="0.05">
+                <div class="note">Rendered pixels per screen point. 1.00 = window resolution (default); your display's native density is <span id="d-native"></span>. Lower = faster.</div>
+                <h4>Smoothing</h4>
+                <select id="d-smooth">
+                    <option value="auto">Smooth (default)</option>
+                    <option value="pixelated">Pixelated</option>
+                </select>
+                <h4>Window</h4>
+                <button class="btn" id="d-fs">Fullscreen</button>
+                <button class="btn" id="d-focus">Focus game</button>
+            </div>
+            <div class="dbg-sec" data-s="cheat">
+                <h4>Live (while playing)</h4>
+                <label class="dbg-row"><span>Invincible (no damage)</span><input type="checkbox" data-live="invincible"></label>
+                <label class="dbg-row"><span>Auto-heal (get hit, never die)</span><input type="checkbox" data-live="infhp"></label>
+                <label class="dbg-row"><span>Infinite soul</span><input type="checkbox" data-live="infsoul"></label>
+                <button class="btn" id="l-heal">Refill health</button>
+                <button class="btn" id="l-soul">Full soul</button>
+                <button class="btn" id="l-geo">+1000 geo</button>
+                <button class="btn" id="l-gate" title="Warps to your placed Dream Gate without spending essence">Warp to Dream Gate</button>                <h4>Save slot (reloads)</h4>
+                <div class="note">Pause → Quit to Menu first (that saves). Changes reload the page and load you back into the slot.</div>
+                <select id="c-slot"></select>
+                <div id="c-body" class="note">--</div>
+                <div id="c-form" hidden>
+                    <h4>Bench warp</h4>
+                    <select data-sel="bench"></select>
+                    <button class="btn" id="c-warp">Warp now</button>
+                    <div class="note">Reloads and drops you into this slot at the bench.</div>
+                    <h4>Unlocks</h4>
+                    <label class="dbg-row"><span>Infinite double jump</span><input type="checkbox" data-cheat="airjump"></label>
+                    <label class="dbg-row"><span>All charms (+ unbreakables)</span><input type="checkbox" data-cheat="charms"></label>
+                    <label class="dbg-row"><span>Charms cost 0 notches</span><input type="checkbox" data-cheat="freecharms"></label>
+                    <label class="dbg-row"><span>Equip every charm</span><input type="checkbox" data-cheat="equipall"></label>
+                    <label class="dbg-row"><span>All abilities, spells &amp; nail arts</span><input type="checkbox" data-cheat="abilities"></label>
+                    <label class="dbg-row"><span>Max masks, soul, nail, notches</span><input type="checkbox" data-cheat="maxstats"></label>
+                    <label class="dbg-row"><span>Full map (all areas, quill, pins, markers)</span><input type="checkbox" data-cheat="fullmap"></label>
+                    <label class="dbg-row"><span>Hall of Gods: all statues</span><input type="checkbox" data-cheat="statues"></label>
+                    <label class="dbg-row"><span>All 5 Pantheons</span><input type="checkbox" data-cheat="pantheons"></label>
+                    <label class="dbg-row"><span>Charm 36</span><select data-sel="royal" style="width:auto"></select></label>
+                    <label class="dbg-row"><span>Grimmchild</span><select data-sel="grimm" style="width:auto"></select></label>
+                    <h4>Values</h4>
+                    <label class="dbg-row"><span>Geo</span><input type="number" min="0" max="9999999" data-num="geo" style="width:90px"></label>
+                    <label class="dbg-row"><span>Essence</span><input type="number" min="0" max="9999999" data-num="dreamOrbs" style="width:90px"></label>
+                    <label class="dbg-row"><span>Masks (base)</span><input type="number" min="1" max="20" data-num="maxHealthBase" style="width:90px"></label>
+                    <label class="dbg-row"><span>Nail damage</span><input type="number" min="1" max="999" data-num="nailDamage" style="width:90px"></label>
+                    <label class="dbg-row"><span>Charm notches</span><input type="number" min="0" max="20" data-num="charmSlots" style="width:90px"></label>
+                    <button class="btn" id="c-apply">Apply &amp; reload</button>
+                    <button class="btn" id="c-json">↓ JSON</button>
+                </div>
+                <div class="note" id="c-msg"></div>
+            </div>
+            <div class="dbg-sec" data-s="save">
+                <div class="note">Saves live in this browser's IndexedDB. Imports are applied on reload, before the game boots, so the game can't overwrite them.</div>
+                <h4>Files</h4>
+                <div class="files" id="s-files">--</div>
+                <button class="btn" id="s-refresh">Refresh</button>
+                <button class="btn" id="s-backup">Backup all</button>
+                <h4>Import</h4>
+                <button class="btn" id="s-import">Import save file…</button>
+                <button class="btn" id="s-premade">Add premade Godseeker save</button>
+                <input type="file" id="s-file" hidden>
+                <div class="note" id="s-msg"></div>
+            </div>
+            <div class="dbg-sec" data-s="sys">
+                <div class="dbg-row"><span>GPU</span><span id="y-gpu">--</span></div>
+                <div class="dbg-row"><span>WebGL</span><span id="y-gl">--</span></div>
+                <div class="dbg-row"><span>Max texture</span><span id="y-tex">--</span></div>
+                <div class="dbg-row"><span>Browser</span><span id="y-ua">--</span></div>
+                <div class="dbg-row"><span>Cores / RAM</span><span id="y-hw">--</span></div>
+                <div class="dbg-row"><span>Screen</span><span id="y-scr">--</span></div>
+                <div class="dbg-row"><span>Storage used</span><span id="y-store">--</span></div>
+                <div class="dbg-row"><span>Game cache</span><span id="y-cache">--</span></div>
+                <button class="btn" id="y-copy">Copy report</button>
+                <button class="btn warn" id="y-clear">Clear 900MB game cache</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const DB_NAME = "cachedb";
+        const STORE_NAME = "files";
+
+        function openCacheDB() {
+            return new Promise((resolve, reject) => {
+                const req = indexedDB.open(DB_NAME, 1);
+
+                req.onupgradeneeded = () => {
+                    const db = req.result;
+                    if (!db.objectStoreNames.contains(STORE_NAME)) {
+                        db.createObjectStore(STORE_NAME);
+                    }
+                };
+
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error);
+            });
+        }
+
+        async function saveToCache(key, blob) {
+            const db = await openCacheDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(STORE_NAME, "readwrite");
+                tx.objectStore(STORE_NAME).put(blob, key);
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+                // quota errors abort the transaction without firing onerror
+                tx.onabort = () => reject(tx.error || new DOMException("aborted", "QuotaExceededError"));
+            });
+        }
+
+        async function loadFromCache(key) {
+            const db = await openCacheDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(STORE_NAME, "readonly");
+                const req = tx.objectStore(STORE_NAME).get(key);
+                req.onsuccess = () => resolve(req.result || null);
+                req.onerror = () => reject(req.error);
+            });
+        }
+
+        async function deleteFromCache(key) {
+            const db = await openCacheDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(STORE_NAME, "readwrite");
+                tx.objectStore(STORE_NAME).delete(key);
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            });
+        }
+    </script>
+
+    <script>
+        /* ===================== debug overlay logic ===================== */
+        window.HKDebug = (() => {
+            const $ = (id) => document.getElementById(id);
+            const t0 = performance.now();
+            const ls = {
+                get(k, d) { try { const v = localStorage.getItem("hkdbg." + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+                set(k, v) { try { localStorage.setItem("hkdbg." + k, JSON.stringify(v)); } catch {} }
+            };
+            // render scale = rendered pixels per CSS pixel. Default 1 skips the 1.5-2x pixel density of
+            // high-DPI screens (2.25-4x fewer pixels to shade); the slider can go back up to native.
+            const D = { instance: null, scale: ls.get("rscale", 1), loadMs: null, cache: {} };
+            const fmtMB = (b) => (b / 1048576).toFixed(0) + " MB";
+
+            /* --- frame timing: Emscripten's main loop schedules Browser_mainLoop_runner once per
+                   game frame, via requestAnimationFrame (vsync) or setTimeout (when the game caps fps) --- */
+            const times = [];               // [timestamp, frameMs]
+            let lastGameFrame = 0;
+            D.loopMode = "--";
+            const mark = (mode) => {
+                const now = performance.now();
+                if (lastGameFrame && now - lastGameFrame < 5000) times.push([now, now - lastGameFrame]);
+                lastGameFrame = now;
+                D.loopMode = mode;
+                if (times.length > 4000) times.splice(0, 1000);
+            };
+            const isRunner = (cb) => typeof cb === "function" && cb.name === "Browser_mainLoop_runner";
+            const rawRAF = window.requestAnimationFrame.bind(window);
+            window.requestAnimationFrame = function (cb) {
+                if (!isRunner(cb)) return rawRAF(cb);
+                return rawRAF(function (ts) { mark("rAF / vsync"); return cb(ts); });
+            };
+            const rawST = window.setTimeout.bind(window);
+            window.setTimeout = function (cb, ms, ...rest) {
+                if (!isRunner(cb)) return rawST(cb, ms, ...rest);
+                return rawST(function () { mark("timer (vsync off)"); return cb.apply(this, arguments); }, ms, ...rest);
+            };
+
+            function stats(windowMs) {
+                const now = performance.now();
+                const f = [];
+                for (let i = times.length - 1; i >= 0 && now - times[i][0] < windowMs; i--) f.push(times[i][1]);
+                if (!f.length) return null;
+                const sum = f.reduce((a, b) => a + b, 0);
+                const sorted = [...f].sort((a, b) => b - a);
+                const low1 = sorted.slice(0, Math.max(1, Math.ceil(f.length / 100)));
+                return {
+                    fps: f.length / (Math.min(windowMs, sum) / 1000),
+                    avg: sum / f.length,
+                    low1: 1000 / (low1.reduce((a, b) => a + b, 0) / low1.length),
+                    worst: sorted[0],
+                    hitches: f.filter((x) => x > 50).length,
+                    n: f.length
+                };
+            }
+
+            /* --- UI wiring --- */
+            const root = $("dbg");
+            const toggle = () => { root.classList.toggle("open"); ls.set("open", root.classList.contains("open")); if (root.classList.contains("open")) refreshAll(); };
+            $("dbg-chip").onclick = toggle;
+            if (ls.get("open", false)) root.classList.add("open");
+            window.addEventListener("keydown", (e) => { if (e.key === "F2") { e.preventDefault(); e.stopImmediatePropagation(); toggle(); } }, true);
+            // keep clicks/keys inside the panel from reaching the game
+            ["keydown", "keyup", "keypress", "mousedown", "wheel"].forEach((ev) =>
+                $("dbg-panel").addEventListener(ev, (e) => e.stopPropagation()));
+
+            let tab = ls.get("tab", "perf");
+            function showTab(t) {
+                tab = t; ls.set("tab", t);
+                document.querySelectorAll("#dbg-tabs button").forEach((b) => b.classList.toggle("on", b.dataset.t === t));
+                document.querySelectorAll(".dbg-sec").forEach((s) => s.classList.toggle("on", s.dataset.s === t));
+                refreshAll();
+            }
+            document.querySelectorAll("#dbg-tabs button").forEach((b) => b.onclick = () => showTab(b.dataset.t));
+            showTab(tab);
+
+            /* --- perf tab --- */
+            const graph = $("dbg-graph"), g = graph.getContext("2d");
+            function drawGraph() {
+                const W = graph.width, H = graph.height, n = 180;
+                g.clearRect(0, 0, W, H);
+                const recent = times.slice(-n);
+                const y = (ms) => H - Math.min(ms, 66.7) / 66.7 * H;
+                g.strokeStyle = "rgba(255,255,255,.15)";
+                [16.7, 33.3].forEach((ms) => { g.beginPath(); g.moveTo(0, y(ms)); g.lineTo(W, y(ms)); g.stroke(); });
+                const bw = W / n;
+                recent.forEach(([, ms], i) => {
+                    g.fillStyle = ms > 50 ? "#ff8a80" : ms > 20 ? "#ffd180" : "#9fd3ff";
+                    g.fillRect(i * bw, y(ms), Math.max(1, bw - 1), H - y(ms));
+                });
+            }
+
+            function updatePerf() {
+                const s = stats(1000), s5 = stats(5000);
+                const fpsEl = $("dbg-fps");
+                fpsEl.textContent = s ? s.fps.toFixed(0) : "--";
+                fpsEl.className = !s ? "" : s.fps >= 55 ? "ok" : s.fps < 30 ? "bad" : "";
+                $("dbg-ms").textContent = s ? s.avg.toFixed(1) + " ms" : "-- ms";
+                if (!root.classList.contains("open") || tab !== "perf") return;
+                drawGraph();
+                $("p-gfps").textContent = s ? s.fps.toFixed(1) : "--";
+                $("p-avg").textContent = s5 ? s5.avg.toFixed(2) + " ms / " + s5.low1.toFixed(0) + " fps" : "--";
+                $("p-worst").textContent = s5 ? s5.worst.toFixed(1) + " ms" : "--";
+                $("p-hitch").textContent = s5 ? s5.hitches : "--";
+                $("p-loop").textContent = D.loopMode;
+                const c = $("unity-canvas");
+                $("p-res").textContent = c.width + "×" + c.height + " @" + (c.width / Math.max(1, c.clientWidth)).toFixed(2) + "x";
+                $("p-heap").textContent = performance.memory ? fmtMB(performance.memory.usedJSHeapSize) + " / " + fmtMB(performance.memory.jsHeapSizeLimit) : "n/a";
+                const M = D.instance && D.instance.Module;
+                const heap = M && (M.HEAPU8 || (M.wasmMemory && { length: M.wasmMemory.buffer.byteLength }));
+                $("p-wasm").textContent = heap ? fmtMB(heap.length) : "--";
+                $("p-load").textContent = D.loadMs ? (D.loadMs / 1000).toFixed(1) + " s" : "loading…";
+            }
+            setInterval(updatePerf, 250);
+
+            $("p-reset").onclick = () => { times.length = 0; lastGameFrame = 0; $("p-bench-out").textContent = ""; };
+            $("p-bench").onclick = () => {
+                const btn = $("p-bench"), out = $("p-bench-out");
+                btn.disabled = true; times.length = 0; lastGameFrame = 0;
+                let left = 30;
+                const iv = setInterval(() => {
+                    out.textContent = "Recording… " + --left + "s (play normally)";
+                    if (left > 0) return;
+                    clearInterval(iv); btn.disabled = false;
+                    const r = stats(30000);
+                    out.textContent = r ? `30s: ${r.fps.toFixed(1)} fps avg, ${r.avg.toFixed(2)} ms, 1% low ${r.low1.toFixed(0)} fps, worst ${r.worst.toFixed(0)} ms, ${r.hitches} hitches, ${r.n} frames` : "No frames recorded.";
+                    console.log("[HKDebug] benchmark", r);
+                }, 1000);
+            };
+
+            /* --- display tab --- */
+            const scaleIn = $("d-scale");
+            function applyScale(v) {
+                D.scale = +v; ls.set("rscale", D.scale);
+                scaleIn.value = D.scale; $("d-scale-v").textContent = D.scale.toFixed(2) + "x";
+                $("d-native").textContent = (window.devicePixelRatio || 1).toFixed(2);
+                const dpr = D.scale;
+                if (D.instance) D.instance.Module.devicePixelRatio = dpr;
+                return dpr;
+            }
+            scaleIn.oninput = () => applyScale(scaleIn.value);
+            applyScale(D.scale);
+            $("d-smooth").value = ls.get("smooth", "auto");
+            const applySmooth = () => { $("unity-canvas").style.imageRendering = $("d-smooth").value; ls.set("smooth", $("d-smooth").value); };
+            $("d-smooth").onchange = applySmooth; applySmooth();
+            $("d-fs").onclick = () => D.instance && D.instance.SetFullscreen(1);
+            $("d-focus").onclick = () => { root.classList.remove("open"); ls.set("open", false); $("unity-canvas").focus(); };
+
+            /* --- saves tab: Unity persists to the "/idbfs" IndexedDB database --- */
+            function idb(name) {
+                return new Promise((res, rej) => {
+                    const r = indexedDB.open(name);
+                    r.onsuccess = () => res(r.result);
+                    r.onerror = () => rej(r.error);
+                    r.onupgradeneeded = () => { r.transaction.abort(); rej(new Error("no db")); };
+                });
+            }
+            async function listSaveFiles() {
+                const db = await idb("/idbfs");
+                const out = [];
+                await new Promise((res, rej) => {
+                    const tx = db.transaction("FILE_DATA", "readonly");
+                    tx.objectStore("FILE_DATA").openCursor().onsuccess = (e) => {
+                        const c = e.target.result;
+                        if (!c) return res();
+                        if (c.value && c.value.contents) out.push({ path: c.key, size: c.value.contents.length, time: c.value.timestamp, contents: c.value.contents });
+                        c.continue();
+                    };
+                    tx.onerror = () => rej(tx.error);
+                });
+                db.close();
+                return out;
+            }
+            function download(name, data) {
+                const a = document.createElement("a");
+                a.href = URL.createObjectURL(new Blob([data]));
+                a.download = name;
+                a.click();
+                setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+            }
+            const base = (p) => p.split("/").pop();
+            let saveFiles = [];
+            async function refreshSaves() {
+                const box = $("s-files");
+                try { saveFiles = await listSaveFiles(); }
+                catch { box.textContent = "No save storage yet (start the game once)."; return; }
+                box.innerHTML = "";
+                if (!saveFiles.length) { box.textContent = "No files yet."; return; }
+                saveFiles.sort((a, b) => a.path.localeCompare(b.path)).forEach((f) => {
+                    const row = document.createElement("div");
+                    const slot = (base(f.path).match(/^user(\d+)\.dat$/) || [])[1];
+                    row.innerHTML = `<code title="${f.path}">${base(f.path)}</code><span>${(f.size / 1024).toFixed(1)}K <button class="btn" title="Download">↓</button>`
+                        + (slot ? `<button class="btn warn" title="Delete save slot ${slot}">✕</button>` : "") + `</span>`;
+                    const [dl, del] = row.querySelectorAll("button");
+                    dl.onclick = () => download(base(f.path), f.contents);
+                    if (del) del.onclick = () => deleteSlot(slot);
+                    box.appendChild(row);
+                });
+            }
+            // the game also keeps userN.dat.bakN and userN_<version>.dat copies; clear those too
+            async function deleteSlot(slot) {
+                if (!confirm(`Delete save slot ${slot}? This can't be undone (use ↓ first to keep a copy).`)) return;
+                const doomed = saveFiles.filter((f) => new RegExp(`/user${slot}(\\.dat(\\.bak\\d+)?|_[\\d.]+\\.dat)$`).test(f.path));
+                await queueAndReload(doomed.map((f) => ({ path: f.path, remove: true })));
+            }
+            async function addPremade() {
+                await refreshSaves();
+                const used = new Set(saveFiles.map((f) => (base(f.path).match(/^user(\d+)\.dat$/) || [])[1]).filter(Boolean));
+                const slot = [1, 2, 3, 4].find((s) => !used.has(String(s)));
+                if (!saveFiles.length) { $("s-msg").textContent = "Start the game once first, so the save folder exists."; return; }
+                if (!slot) { $("s-msg").textContent = "All 4 slots are full. Delete one first."; return; }
+                if (!confirm(`Put the premade Godseeker save in slot ${slot} and reload?`)) return;
+                const dir = saveFiles[0].path.replace(/\/[^/]*$/, "");
+                await queueAndReload([{ path: `${dir}/user${slot}.dat`, b64: premadeB64() }]);
+            }
+            const premadeB64 = () => document.getElementById("premade-save").textContent.replace(/\s+/g, "");
+
+            // First launch only: put the premade Godseeker save in slot 1 if there are no saves yet.
+            // Written into Unity's in-memory FS (what the slot menu reads) and IndexedDB, so no reload.
+            async function installPremadeOnce() {
+                if (ls.get("premadeInstalled", false)) return;
+                let files = [];
+                for (let i = 0; i < 30 && !files.length; i++) {   // Unity creates its save folder shortly after boot
+                    files = await listSaveFiles().catch(() => []);
+                    if (!files.length) await new Promise((r) => setTimeout(r, 1000));
+                }
+                if (!files.length) return;
+                ls.set("premadeInstalled", true);
+                if (files.some((f) => /\/user\d+\.dat$/.test(f.path))) return;
+                const dir = files[0].path.replace(/\/[^/]*$/, "");
+                const bytes = Uint8Array.from(atob(premadeB64()), (c) => c.charCodeAt(0));
+                try {
+                    D.instance.Module.FS_createDataFile(dir, "user1.dat", bytes, true, true, true);
+                } catch (e) { console.warn("[HKDebug] premade save: in-memory write failed", e); }
+                const db = await idb("/idbfs");
+                await new Promise((res, rej) => {
+                    const tx = db.transaction("FILE_DATA", "readwrite");
+                    tx.objectStore("FILE_DATA").put({ timestamp: new Date(), mode: 33206, contents: bytes }, dir + "/user1.dat");
+                    tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+                });
+                db.close();
+                console.log("[HKDebug] installed premade Godseeker save in slot 1");
+            }
+            $("s-refresh").onclick = refreshSaves;
+            $("s-premade").onclick = () => addPremade();
+            $("s-backup").onclick = async () => {
+                await refreshSaves();
+                const dump = saveFiles.map((f) => ({ path: f.path, time: f.time, b64: btoa(Array.from(f.contents, (c) => String.fromCharCode(c)).join("")) }));
+                download("hk-web-saves-" + new Date().toISOString().slice(0, 10) + ".json", JSON.stringify(dump));
+            };
+            $("s-import").onclick = () => $("s-file").click();
+            $("s-file").onchange = async (e) => {
+                const file = e.target.files[0]; e.target.value = "";
+                if (!file) return;
+                const bytes = new Uint8Array(await file.arrayBuffer());
+                await refreshSaves();
+                let pending;
+                if (file.name.endsWith(".json") && bytes[0] === 0x5b) {          // full backup from "Backup all"
+                    pending = JSON.parse(new TextDecoder().decode(bytes)).map((f) => ({ path: f.path, b64: f.b64 }));
+                } else {                                                           // single file: replace the same-named file
+                    const dir = saveFiles.length ? saveFiles[0].path.replace(/\/[^/]*$/, "") : null;
+                    const target = (saveFiles.find((f) => base(f.path) === file.name) || {}).path || (dir && dir + "/" + file.name);
+                    if (!target) { $("s-msg").textContent = "Start the game and save once first, so the save folder exists."; return; }
+                    pending = [{ path: target, b64: btoa(Array.from(bytes, (c) => String.fromCharCode(c)).join("")) }];
+                }
+                if (!confirm(`Overwrite ${pending.length} save file(s) and reload? Use "Backup all" first if unsure.`)) return;
+                await queueAndReload(pending);
+            };
+            const toB64 = (bytes) => { let s = ""; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s); };
+            async function queueAndReload(pending) {
+                await saveToCache("__pending_save_import", pending);
+                location.reload();
+            }
+
+            /* --- live cheats: Unity's SendMessage reaches HeroController on the "Knight" object.
+                   The game resets these during transitions, so active toggles re-apply every 0.5s --- */
+            // Unity's SendMessage logs synchronously when the object is missing ("...not found!") or
+            // lacks the method ("...does not have receiver..."); swallow those, optionally reporting which
+            const send = (obj, fn, arg) => {
+                if (!D.instance) return null;
+                let exists = true;
+                const log = console.log;
+                console.log = (...a) => {
+                    const s = String(a[0]);
+                    if (s.startsWith("SendMessage: object " + obj)) exists = !s.includes("not found");
+                    else log(...a);
+                };
+                try { arg === undefined ? D.instance.SendMessage(obj, fn) : D.instance.SendMessage(obj, fn, arg); }
+                catch {} finally { console.log = log; }
+                return exists;
+            };
+            const hero = (fn, arg) => send("Knight", fn, arg);
+            const LIVE = {
+                invincible: { tick: () => hero("SetDamageMode", 2), off: () => hero("SetDamageMode", 0) },   // DamageMode.NO_DAMAGE / FULL_DAMAGE
+                infhp: { tick: () => hero("MaxHealth") },
+                infsoul: { tick: () => hero("AddMPCharge", 198) }
+            };
+            const liveOn = ls.get("live", {});
+            document.querySelectorAll("[data-live]").forEach((box) => {
+                const k = box.dataset.live;
+                box.checked = !!liveOn[k];
+                box.onchange = () => {
+                    liveOn[k] = box.checked; ls.set("live", liveOn);
+                    if (box.checked) LIVE[k].tick(); else if (LIVE[k].off) LIVE[k].off();
+                };
+            });
+            setInterval(() => Object.keys(LIVE).forEach((k) => liveOn[k] && LIVE[k].tick()), 500);
+            $("l-heal").onclick = () => hero("MaxHealth");
+            $("l-soul").onclick = () => hero("AddMPCharge", 198);
+            $("l-geo").onclick = () => hero("AddGeo", 1000);   // no geo counter in Godseeker mode, so it errors there
+            $("l-gate").onclick = () => send("_GameManager", "WarpToDreamGate");
+
+            /* --- cheats tab: userN.dat is the PC format (BinaryFormatter string wrapping
+                   base64 of AES-128-ECB/PKCS7 JSON), so edits round-trip with Steam saves --- */
+            const HK_KEY = "UKu52ePUBwetZ9wNX88o54dnfKRu0T1l";
+            const SAVE_HEADER = [0, 1, 0, 0, 0, 255, 255, 255, 255, 1, 0, 0, 0, 0, 0, 0, 0, 6, 1, 0, 0, 0];
+            let cryptoJs = null;
+            function loadCryptoJs() {
+                if (window.CryptoJS) return Promise.resolve(window.CryptoJS);
+                return cryptoJs || (cryptoJs = new Promise((res, rej) => {
+                    const s = document.createElement("script");
+                    s.src = "https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js";
+                    s.integrity = "sha512-a+SUDuwNzXDvz4XrIcXHuCf089/iJAoN4lmrXJg18XnduKK6YlDHNRalv4yd1N40OKI80tFidF+rqTFKGPoWFQ==";
+                    s.crossOrigin = "anonymous";
+                    s.onload = () => res(window.CryptoJS);
+                    s.onerror = () => { cryptoJs = null; rej(new Error("couldn't load crypto-js")); };
+                    document.head.appendChild(s);
+                }));
+            }
+            function decodeSave(bytes, CJ) {
+                let i = SAVE_HEADER.length, n = 0, shift = 0, b;
+                do { b = bytes[i++]; n |= (b & 0x7f) << shift; shift += 7; } while (b & 0x80);
+                const b64 = new TextDecoder().decode(bytes.subarray(i, i + n));
+                const plain = CJ.AES.decrypt({ ciphertext: CJ.enc.Base64.parse(b64) }, CJ.enc.Utf8.parse(HK_KEY),
+                    { mode: CJ.mode.ECB, padding: CJ.pad.Pkcs7 });
+                return JSON.parse(plain.toString(CJ.enc.Utf8));
+            }
+            function encodeSave(obj, CJ) {
+                const b64 = CJ.AES.encrypt(CJ.enc.Utf8.parse(JSON.stringify(obj)), CJ.enc.Utf8.parse(HK_KEY),
+                    { mode: CJ.mode.ECB, padding: CJ.pad.Pkcs7 }).ciphertext.toString(CJ.enc.Base64);
+                const len = [];
+                let n = b64.length;
+                do { let b = n & 0x7f; n >>>= 7; if (n) b |= 0x80; len.push(b); } while (n);
+                const out = new Uint8Array(SAVE_HEADER.length + len.length + b64.length + 1);
+                out.set(SAVE_HEADER);
+                out.set(len, SAVE_HEADER.length);
+                for (let k = 0; k < b64.length; k++) out[SAVE_HEADER.length + len.length + k] = b64.charCodeAt(k);
+                out[out.length - 1] = 0x0b;
+                return out;
+            }
+
+            const range = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
+            const VANILLA_COST = [1, 1, 1, 2, 2, 2, 3, 2, 3, 1, 3, 1, 3, 1, 2, 2, 1, 2, 3, 2, 4, 2, 2, 2, 3, 1, 4, 2, 4, 1, 2, 3, 2, 4, 3, 5, 1, 3, 2, 2];
+            const ABILITIES = {   // has* is "owned", can* is what the movement code actually checks
+                hasDash: true, canDash: true, hasShadowDash: true, canShadowDash: true, hasWalljump: true, canWallJump: true,
+                hasDoubleJump: true, hasSuperDash: true, canSuperDash: true,
+                hasAcidArmour: true, hasLantern: true, hasDreamNail: true, hasDreamGate: true, dreamNailUpgraded: true,
+                hasSpell: true, fireballLevel: 2, quakeLevel: 2, screamLevel: 2,
+                hasNailArt: true, hasCyclone: true, hasDashSlash: true, hasUpwardSlash: true, hasAllNailArts: true
+            };
+            const NO_ABILITIES = Object.fromEntries(Object.entries(ABILITIES).map(([k, v]) => [k, typeof v === "number" ? 0 : false]));
+            const MAP_FLAGS = ["hasMap", "mapAllRooms", "hasQuill", "mapDirtmouth", "mapCrossroads", "mapGreenpath", "mapFogCanyon",
+                "mapRoyalGardens", "mapFungalWastes", "mapCity", "mapWaterways", "mapMines", "mapDeepnest", "mapCliffs", "mapOutskirts",
+                "mapRestingGrounds", "mapAbyss", "hasPin", "hasPinBench", "hasPinCocoon", "hasPinDreamPlant", "hasPinGuardian",
+                "hasPinBlackEgg", "hasPinShop", "hasPinSpa", "hasPinStag", "hasPinTram", "hasPinGhost", "hasPinGrub",
+                "hasMarker", "hasMarker_r", "hasMarker_b", "hasMarker_y", "hasMarker_w"];
+            const statueKeys = (p) => Object.keys(p).filter((k) => k.startsWith("statueState"));
+            // every toggle works both ways: unchecking removes the item / resets to new-game values
+            const vanillaCost = (p, i) =>
+                i === 36 ? (p.royalCharmState === 4 ? 0 : 5)      // Void Heart / Kingsoul
+                : i === 40 ? (p.grimmChildLevel === 5 ? 3 : 2)     // Carefree Melody / Grimmchild
+                : VANILLA_COST[i - 1];
+            const refillNotches = (p) => {
+                p.charmSlotsFilled = (p.equippedCharms || []).reduce((s, i) => s + (p["charmCost_" + i] || 0), 0);
+                p.overcharmed = p.charmSlotsFilled > p.charmSlots;
+            };
+            // (no save-file invincibility: the game clears isInvincible on load; the live toggle covers it)
+            const CHEATS = {
+                airjump: { get: (p) => !!p.infiniteAirJump, set: (p, on) => { p.infiniteAirJump = on; } },
+                charms: {
+                    get: (p) => range(1, 40).every((i) => p["gotCharm_" + i]) && p.royalCharmState >= 3,
+                    set: (p, on) => {
+                        range(1, 40).forEach((i) => { p["gotCharm_" + i] = on; });
+                        range(23, 25).forEach((i) => { p["brokenCharm_" + i] = false; });
+                        Object.assign(p, {
+                            hasCharm: on, charmsOwned: on ? 40 : 0, gotShadeCharm: on,
+                            fragileHealth_unbreakable: on, fragileGreed_unbreakable: on, fragileStrength_unbreakable: on
+                        });
+                        if (on) {
+                            if (p.royalCharmState < 3) SELECTS.royal.set(p, "4");
+                            if (!p.grimmChildLevel) p.grimmChildLevel = 1;
+                        } else {
+                            Object.assign(p, { royalCharmState: 0, grimmChildLevel: 0 });
+                            CHEATS.equipall.set(p, false);
+                        }
+                    }
+                },
+                equipall: {
+                    get: (p) => range(1, 40).every((i) => p["equippedCharm_" + i]),
+                    set: (p, on) => {
+                        p.equippedCharms = on ? range(1, 40) : [];
+                        range(1, 40).forEach((i) => { p["equippedCharm_" + i] = on; });
+                        refillNotches(p);
+                    }
+                },
+                fullmap: {
+                    get: (p) => MAP_FLAGS.every((k) => p[k]),
+                    set: (p, on) => {
+                        MAP_FLAGS.forEach((k) => { p[k] = on; });
+                        if (on) p.gotCharm_2 = true;   // Wayward Compass, to see yourself on the map
+                    }
+                },
+                statues: {
+                    get: (p) => statueKeys(p).every((k) => p[k].isUnlocked && p[k].hasBeenSeen),
+                    set: (p, on) => statueKeys(p).forEach((k) => { p[k].hasBeenSeen = on; p[k].isUnlocked = on; })
+                },
+                pantheons: {
+                    get: (p) => range(1, 5).every((t) => p["bossDoorStateTier" + t].unlocked),
+                    set: (p, on) => range(1, 5).forEach((t) => { Object.assign(p["bossDoorStateTier" + t], { unlocked: on, canUnlock: on }); })
+                },
+                freecharms: {
+                    get: (p) => range(1, 40).every((i) => p["charmCost_" + i] === 0),
+                    set: (p, on) => {
+                        range(1, 40).forEach((i) => { p["charmCost_" + i] = on ? 0 : vanillaCost(p, i); });
+                        refillNotches(p);
+                    }
+                },
+                abilities: {
+                    get: (p) => Object.entries(ABILITIES).every(([k, v]) => p[k] === v),
+                    set: (p, on) => { Object.assign(p, on ? ABILITIES : NO_ABILITIES); }
+                },
+                maxstats: {
+                    get: (p) => p.maxHealthBase >= 9 && p.MPReserveMax >= 99 && p.nailSmithUpgrades >= 4 && p.charmSlots >= 11,
+                    set: (p, on) => {
+                        // off = new-game values: 5 masks, no soul vessels, old nail, 3 notches
+                        p.maxHealthBase = on ? Math.max(9, p.maxHealthBase) : 5;
+                        p.maxHealth = on ? Math.max(p.maxHealth, p.maxHealthBase) : p.maxHealthBase;
+                        p.health = p.maxHealth;
+                        p.MPReserveMax = on ? Math.max(99, p.MPReserveMax) : 0;
+                        p.nailSmithUpgrades = on ? 4 : 0;
+                        p.nailDamage = on ? Math.max(21, p.nailDamage) : 5;
+                        p.charmSlots = on ? Math.max(11, p.charmSlots) : 3;
+                        refillNotches(p);
+                    }
+                }
+            };
+            const NUMS = {
+                geo: (p, v) => { p.geo = v; },
+                dreamOrbs: (p, v) => { p.dreamOrbs = v; },
+                maxHealthBase: (p, v) => { p.maxHealth += v - p.maxHealthBase; p.maxHealthBase = v; p.health = p.maxHealth; },
+                nailDamage: (p, v) => { p.nailDamage = v; },
+                charmSlots: (p, v) => { p.charmSlots = v; }
+            };
+
+            const BENCHES = [   // [label, scene, respawn marker, MapZone] from Benchwarp's bench table
+                ["Cliffs: Dirtmouth", "Town", "RestBench", 4], ["Cliffs: Mato", "Room_nailmaster", "RestBench", 3],
+                ["Crossroads: Hot Springs", "Crossroads_30", "RestBench", 5], ["Crossroads: Stag", "Crossroads_47", "RestBench", 5],
+                ["Crossroads: Salubra", "Crossroads_04", "RestBench", 5], ["Crossroads: Ancestral Mound", "Crossroads_ShamanTemple", "BoneBench", 22],
+                ["Crossroads: Black Egg Temple", "Room_Final_Boss_Atrium", "RestBench", 30], ["Greenpath: Waterfall", "Fungus1_01b", "RestBench", 6],
+                ["Greenpath: Stone Sanctuary", "Fungus1_37", "RestBench", 6], ["Greenpath: Toll", "Fungus1_31", "RestBench", 6],
+                ["Greenpath: Stag", "Fungus1_16_alt", "RestBench", 6], ["Greenpath: Lake of Unn", "Room_Slug_Shrine", "RestBench", 6],
+                ["Greenpath: Sheo", "Fungus1_15", "RestBench", 6], ["Canyon: Archives", "Fungus3_archive", "RestBench", 8],
+                ["Wastes: Queen's Station", "Fungus2_02", "RestBench", 24], ["Wastes: Leg Eater", "Fungus2_26", "RestBench", 9],
+                ["Wastes: Bretta", "Fungus2_13", "RestBench", 9], ["Wastes: Mantis Village", "Fungus2_31", "RestBench", 9],
+                ["City: Quirrel", "Ruins1_02", "RestBench", 16], ["City: Toll", "Ruins1_31", "RestBench", 16],
+                ["City: City Storerooms", "Ruins1_29", "RestBench", 16], ["City: Watcher's Spire", "Ruins1_18", "RestBench", 16],
+                ["City: King's Station", "Ruins2_08", "RestBench", 16], ["City: Pleasure House", "Ruins_Bathhouse", "RestBench", 16],
+                ["Waterways: Waterways", "Waterways_02", "RestBench", 23], ["Godhome: Atrium", "GG_Atrium", "RestBench", 50],
+                ["Godhome: Roof", "GG_Atrium_Roof", "RestBench (1)", 50], ["Godhome: Hall of Gods", "GG_Workshop", "RestBench (1)", 50],
+                ["Deepnest: Hot Springs", "Deepnest_30", "RestBench", 10], ["Deepnest: Failed Tramway", "Deepnest_14", "RestBench", 10],
+                ["Deepnest: Beast's Den", "Deepnest_Spider_Town", "RestBench Return", 49], ["Basin: Toll", "Abyss_18", "RestBench", 19],
+                ["Basin: Hidden Station", "Abyss_22", "RestBench", 19], ["Edge: Oro", "Deepnest_East_06", "RestBench", 25],
+                ["Edge: Camp", "Deepnest_East_13", "RestBench", 25], ["Edge: Colosseum", "Room_Colosseum_02", "RestBench", 18],
+                ["Edge: Hive", "Hive_01", "RestBench", 11], ["Peak: Dark Room", "Mines_29", "RestBench", 14],
+                ["Peak: Crystal Guardian", "Mines_18", "RestBench", 14], ["Grounds: Stag", "RestingGrounds_09", "RestBench", 15],
+                ["Grounds: Grey Mourner", "RestingGrounds_12", "RestBench", 15], ["Gardens: Cornifer", "Fungus1_24", "RestBench", 7],
+                ["Gardens: Toll", "Fungus3_50", "RestBench", 7], ["Gardens: Stag", "Fungus3_40", "RestBench", 7],
+                ["Palace: Entrance", "White_Palace_01", "WhiteBench", 21], ["Palace: Atrium", "White_Palace_03_hub", "WhiteBench", 21],
+                ["Palace: Balcony", "White_Palace_06", "RestBench", 21], ["Tram: Upper Tram", "Room_Tram_RG", "RestBench", 28],
+                ["Tram: Lower Tram", "Room_Tram", "RestBench", 29],
+            ];
+            // "" means "leave as is"
+            const otherCharmsFree = (p, skip) => range(1, 40).every((i) => i === skip || p["charmCost_" + i] === 0);
+            const SELECTS = {
+                bench: {
+                    options: [["", "(current spawn)"]].concat(BENCHES.map((b, i) => [String(i), b[0]])),
+                    get: (p) => { const i = BENCHES.findIndex((b) => b[1] === p.respawnScene && b[2] === p.respawnMarkerName); return i < 0 ? "" : String(i); },
+                    set: (p, v) => {
+                        if (v === "") return;
+                        const [, scene, marker, zone] = BENCHES[+v];
+                        Object.assign(p, { respawnScene: scene, respawnMarkerName: marker, respawnType: 1, mapZone: zone });
+                    }
+                },
+                royal: {
+                    options: [["", "not owned"], ["3", "Kingsoul"], ["4", "Void Heart"]],
+                    get: (p) => p.royalCharmState >= 3 ? String(p.royalCharmState) : "",
+                    set: (p, v) => {
+                        if (v === "") return;
+                        Object.assign(p, { royalCharmState: +v, gotCharm_36: true, gotShadeCharm: true });
+                        p.charmCost_36 = otherCharmsFree(p, 36) ? 0 : vanillaCost(p, 36);
+                        refillNotches(p);
+                    }
+                },
+                grimm: {
+                    options: [["", "not owned"], ["1", "Level 1"], ["2", "Level 2"], ["3", "Level 3"], ["4", "Level 4"], ["5", "Carefree Melody"]],
+                    get: (p) => p.grimmChildLevel ? String(p.grimmChildLevel) : "",
+                    set: (p, v) => {
+                        if (v === "") return;
+                        Object.assign(p, { grimmChildLevel: +v, gotCharm_40: true });
+                        p.charmCost_40 = otherCharmsFree(p, 40) ? 0 : vanillaCost(p, 40);
+                        refillNotches(p);
+                    }
+                }
+            };
+            document.querySelectorAll("[data-sel]").forEach((sel) => {
+                sel.innerHTML = SELECTS[sel.dataset.sel].options.map(([v, label]) => `<option value="${v}">${label}</option>`).join("");
+            });
+
+            /* --- after an edit/warp reload, load the slot straight back in. There's no callable scene
+                   change, so a bench warp = set the slot's respawn bench + reload + LoadGameFromUI. --- */
+            const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+            // a Knight object only exists while playing; editing then would drop unsaved progress
+            const confirmNotPlaying = () => !send("Knight", "__hkProbe")
+                || confirm("You're in a game right now: progress since your last save (bench or Quit to Menu) will be lost.\nContinue anyway?");
+            // wait for the title screen (_GameManager only exists from then on), then load the slot
+            D.autoLoad = async () => {
+                const slot = ls.get("autoLoadSlot", 0);
+                if (!slot) return;
+                ls.set("autoLoadSlot", 0);
+                for (let i = 0; i < 60 && !send("_GameManager", "__hkProbe"); i++) await sleep(1000);
+                await sleep(1500);
+                send("_GameManager", "LoadGameFromUI", slot);
+                console.log("[HKDebug] warp: loading slot", slot);
+            };
+
+            let cheatSave = null;    // { path, data }
+            async function refreshCheats() {
+                const sel = $("c-slot"), msg = $("c-msg");
+                try { saveFiles = await listSaveFiles(); } catch { saveFiles = []; }
+                const slots = saveFiles.filter((f) => /\/user\d+\.dat$/.test(f.path)).sort((a, b) => a.path.localeCompare(b.path));
+                const prev = sel.value;
+                sel.innerHTML = slots.map((f) => `<option value="${f.path}">Slot ${base(f.path).match(/\d+/)[0]}</option>`).join("");
+                if (!slots.length) {
+                    $("c-form").hidden = true;
+                    $("c-body").textContent = "No save slots yet. Start a game (or import a save) first.";
+                    return;
+                }
+                if (slots.some((f) => f.path === prev)) sel.value = prev;
+                msg.textContent = "";
+                $("c-body").textContent = "Decrypting…";
+                try {
+                    const CJ = await loadCryptoJs();
+                    const file = slots.find((f) => f.path === sel.value);
+                    cheatSave = { path: file.path, data: decodeSave(file.contents, CJ) };
+                } catch (e) {
+                    $("c-form").hidden = true;
+                    $("c-body").textContent = "Couldn't read this save: " + e.message;
+                    return;
+                }
+                const p = cheatSave.data.playerData;
+                $("c-body").textContent = `${p.completionPercentage}% · ${(p.playTime / 3600).toFixed(1)}h · ${p.respawnScene}` + (p.bossRushMode ? " · Godseeker" : "") + (p.permadeathMode ? " · Steel Soul" : "");
+                document.querySelectorAll("[data-cheat]").forEach((box) => {
+                    const c = CHEATS[box.dataset.cheat];
+                    box.checked = c.get(p);
+                });
+                document.querySelectorAll("[data-num]").forEach((inp) => { inp.value = p[inp.dataset.num]; });
+                document.querySelectorAll("[data-sel]").forEach((sel) => { sel.value = SELECTS[sel.dataset.sel].get(p); });
+                $("c-form").hidden = false;
+            }
+            $("c-slot").onchange = refreshCheats;
+            $("c-json").onclick = () => cheatSave && download(base(cheatSave.path).replace(".dat", ".json"), JSON.stringify(cheatSave.data, null, 1));
+            $("c-apply").onclick = async () => {
+                if (!cheatSave) return;
+                // "orig" is what the form showed (to see which controls you changed); the edits go onto
+                // a fresh read of the slot, in case the game saved after the form was filled in
+                const orig = cheatSave.data.playerData;
+                const CJ = await loadCryptoJs();
+                const cur = (await listSaveFiles().catch(() => [])).find((f) => f.path === cheatSave.path);
+                const data = cur ? decodeSave(cur.contents, CJ) : JSON.parse(JSON.stringify(cheatSave.data));
+                const p = data.playerData;
+                const changes = [];
+                document.querySelectorAll("[data-num]").forEach((inp) => {
+                    const k = inp.dataset.num, v = Math.round(+inp.value);
+                    if (inp.value !== "" && v !== orig[k]) { NUMS[k](p, v); changes.push(k + "=" + v); }
+                });
+                document.querySelectorAll("[data-cheat]").forEach((box) => {
+                    const k = box.dataset.cheat;
+                    if (box.checked !== CHEATS[k].get(orig)) { CHEATS[k].set(p, box.checked); changes.push((box.checked ? "+" : "-") + k); }
+                });
+                document.querySelectorAll("[data-sel]").forEach((sel) => {
+                    const k = sel.dataset.sel;
+                    if (sel.value !== "" && sel.value !== SELECTS[k].get(orig)) {
+                        SELECTS[k].set(p, sel.value);
+                        changes.push(k + ": " + sel.options[sel.selectedIndex].text);
+                    }
+                });
+                if (!changes.length) { $("c-msg").textContent = "Nothing changed."; return; }
+                if (!confirmNotPlaying()) return;
+                console.log("[HKDebug] applying", changes.join(", "), "to", base(cheatSave.path));
+                ls.set("autoLoadSlot", +base(cheatSave.path).match(/\d+/)[0]);
+                await queueAndReload([{ path: cheatSave.path, b64: toB64(encodeSave(data, CJ)) }]);
+            };
+            $("c-warp").onclick = async () => {
+                if (!cheatSave) return;
+                const bench = document.querySelector('[data-sel="bench"]').value;
+                if (bench === "") { $("c-msg").textContent = "Pick a bench first."; return; }
+                if (!confirmNotPlaying()) return;
+                const CJ = await loadCryptoJs();
+                const cur = (await listSaveFiles().catch(() => [])).find((f) => f.path === cheatSave.path);
+                const data = cur ? decodeSave(cur.contents, CJ) : cheatSave.data;
+                SELECTS.bench.set(data.playerData, bench);
+                ls.set("autoLoadSlot", +base(cheatSave.path).match(/\d+/)[0]);
+                await queueAndReload([{ path: cheatSave.path, b64: toB64(encodeSave(data, CJ)) }]);
+            };
+            // applied at boot, before Unity mounts /idbfs
+            D.applyPendingImport = async () => {
+                const pending = await loadFromCache("__pending_save_import").catch(() => null);
+                if (!pending) return;
+                const db = await idb("/idbfs").catch(() => null);
+                if (db) {
+                    await new Promise((res, rej) => {
+                        const tx = db.transaction("FILE_DATA", "readwrite");
+                        const st = tx.objectStore("FILE_DATA");
+                        pending.forEach((f) => f.remove ? st.delete(f.path) : st.put({
+                            timestamp: new Date(), mode: 33206,
+                            contents: Uint8Array.from(atob(f.b64), (c) => c.charCodeAt(0))
+                        }, f.path));
+                        tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+                    });
+                    db.close();
+                    console.log("[HKDebug] imported", pending.map((f) => f.path));
+                }
+                await deleteFromCache("__pending_save_import");
+            };
+
+            /* --- system tab --- */
+            async function refreshSys() {
+                try {
+                    const gl = document.createElement("canvas").getContext("webgl2") || document.createElement("canvas").getContext("webgl");
+                    const ext = gl && gl.getExtension("WEBGL_debug_renderer_info");
+                    $("y-gpu").textContent = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : (gl ? gl.getParameter(gl.RENDERER) : "no WebGL");
+                    $("y-gl").textContent = gl ? gl.getParameter(gl.VERSION) : "--";
+                    $("y-tex").textContent = gl ? gl.getParameter(gl.MAX_TEXTURE_SIZE) : "--";
+                } catch {}
+                const uad = navigator.userAgentData;
+                $("y-ua").textContent = uad ? uad.brands.filter((b) => !/Not/.test(b.brand)).map((b) => b.brand + " " + b.version).join(", ") + " · " + uad.platform : navigator.userAgent;
+                $("y-hw").textContent = (navigator.hardwareConcurrency || "?") + " / " + (navigator.deviceMemory ? navigator.deviceMemory + " GB+" : "?");
+                $("y-scr").textContent = screen.width + "×" + screen.height + " @" + (window.devicePixelRatio || 1) + "x";
+                if (navigator.storage && navigator.storage.estimate) {
+                    const e = await navigator.storage.estimate();
+                    $("y-store").textContent = fmtMB(e.usage) + " / " + fmtMB(e.quota);
+                }
+                $("y-cache").textContent = Object.entries(D.cache).map(([k, v]) => k.split(".").pop() + ": " + v).join(", ") || "--";
+            }
+            $("y-copy").onclick = () => {
+                const s = stats(5000) || {};
+                const rows = [...document.querySelectorAll('[data-s="sys"] .dbg-row, [data-s="perf"] .dbg-row')]
+                    .map((r) => r.children[0].textContent + ": " + r.children[1].textContent);
+                navigator.clipboard.writeText("HK web perf report\n" + rows.join("\n") + "\nRender scale: " + D.scale + "x\n" + ($("p-bench-out").textContent || ""));
+            };
+            $("y-clear").onclick = async () => {
+                if (!confirm("Delete the cached game files (~913 MB)? They'll re-download next load. Saves are kept.")) return;
+                // keep only a pending save import, if any
+                const db = await openCacheDB();
+                await new Promise((res, rej) => {
+                    const tx = db.transaction(STORE_NAME, "readwrite");
+                    const st = tx.objectStore(STORE_NAME);
+                    st.getAllKeys().onsuccess = (e) => e.target.result
+                        .filter((k) => k !== "__pending_save_import").forEach((k) => st.delete(k));
+                    tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+                });
+                refreshSys();
+            };
+
+            function refreshAll() {
+                if (!root.classList.contains("open")) return;
+                if (tab === "save") refreshSaves();
+                if (tab === "cheat") refreshCheats();
+                if (tab === "sys") refreshSys();
+            }
+
+            D.onLoaded = (inst) => {
+                D.instance = inst;
+                D.loadMs = performance.now() - t0;
+                applyScale(D.scale);
+                console.log("[HKDebug] game loaded in", (D.loadMs / 1000).toFixed(1), "s");
+                installPremadeOnce().catch((e) => console.warn("[HKDebug] premade save failed", e));
+                D.autoLoad().catch((e) => console.warn("[HKDebug] warp auto-load failed", e));
+            };
+            D.dprForConfig = () => D.scale;
+            D.stats = stats;
+            return D;
+        })();
+    </script>
+
+    <script>
+        var loadingText = document.querySelector("#loading-text");
+        let totalBytes = 0;
+        let loadedBytes = 0;
+
+        async function fetchWithProgress(url) {
+            const response = await fetch(url);
+            const reader = response.body.getReader();
+            let chunks = [];
+            let received = 0;
+            while (true) {
+                const {
+                    done,
+                    value
+                } = await reader.read();
+                if (done) break;
+                received += value.length;
+                loadedBytes += value.length;
+                chunks.push(value);
+                let mbDone = (loadedBytes / (1024 * 1024)).toFixed(2);
+                let mbTotal = '912.81';
+                loadingText.textContent = `LOADING... ${mbDone} MB / ${mbTotal} MB`;
+            }
+            if (!response.ok) throw new Error(url + ": HTTP " + response.status);
+            let fullBuffer = new Uint8Array(received);
+            let offset = 0;
+            for (let chunk of chunks) {
+                fullBuffer.set(chunk, offset);
+                offset += chunk.length;
+            }
+            return fullBuffer.buffer;
+        }
+        async function mergeFiles(fileParts, cacheKey) {
+            // old pages cached the whole merged file under one key
+            const legacy = await loadFromCache(cacheKey).catch(() => null);
+            if (legacy) {
+                HKDebug.cache[cacheKey] = "cached";
+                return URL.createObjectURL(legacy);
+            }
+            const c = partCache(fileParts.length, cacheKey);
+            const bufs = await Promise.all(fileParts.map(c.get));
+            await c.finish();
+            return URL.createObjectURL(new Blob(bufs, { type: wasmType(cacheKey) }));
+        }
+        // the wasm Blob needs its MIME type, or Unity can't compile it while it downloads
+        const wasmType = (key) => key.endsWith(".wasm") ? "application/wasm" : "";
+
+        // Hands Unity the data file as a stream that reads one part at a time (from the cache or
+        // the network). Unity copies it into a single buffer of the size given by Content-Length,
+        // so only that copy stays in memory, instead of cached parts + a merged Blob + Unity's copy.
+        const streams = {};
+        async function streamParts(fileParts, cacheKey, totalBytes) {
+            const legacy = await loadFromCache(cacheKey).catch(() => null);
+            if (legacy) {
+                HKDebug.cache[cacheKey] = "cached";
+                return URL.createObjectURL(legacy);
+            }
+            const c = partCache(fileParts.length, cacheKey);
+            const AHEAD = 6;    // parts fetched ahead of what Unity has read
+            const pending = [];
+            let next = 0;
+            const want = (i) => { if (i < fileParts.length && !pending[i]) pending[i] = c.get(fileParts[i]); };
+            const url = "hkstream://" + cacheKey;
+            streams[url] = () => new Response(new ReadableStream({
+                start() { for (let i = 0; i < AHEAD; i++) want(i); },
+                async pull(ctl) {
+                    if (next >= fileParts.length) { await c.finish(); ctl.close(); return; }
+                    const buf = await pending[next];
+                    pending[next] = null;          // let the part be garbage-collected once Unity has copied it
+                    next++;
+                    for (let i = next; i < next + AHEAD; i++) want(i);
+                    ctl.enqueue(new Uint8Array(buf));
+                }
+            }, { highWaterMark: 0 }), { headers: { "Content-Length": String(totalBytes) } });
+            return url;
+        }
+        const rawFetch = window.fetch.bind(window);
+        window.fetch = (input, init) => {
+            const make = typeof input === "string" && streams[input];
+            return make ? Promise.resolve(make()) : rawFetch(input, init);
+        };
+
+        // each ~20 MB part is cached separately, as raw bytes, right after it downloads:
+        // one 880 MB record is rejected by some browsers, and Chromium can't write piles
+        // of in-memory Blobs to IndexedDB from file:// pages (InvalidBlob)
+        function partCache(n, cacheKey) {
+            let fromCache = 0, saved = 0, err = null;
+            // localStorage "hkdbg.nocache" = "true" skips caching (for low-disk machines / testing)
+            const off = (() => { try { return localStorage.getItem("hkdbg.nocache") === "true"; } catch { return false; } })();
+            let full = off;
+            const failed = [];
+            const tryCache = async (part, buf) => {
+                if (full) return false;
+                try {
+                    const est = navigator.storage && navigator.storage.estimate ? await navigator.storage.estimate() : null;
+                    if (est && est.quota - est.usage < buf.byteLength * 1.2) throw new DOMException("storage full", "QuotaExceededError");
+                    await saveToCache(part, buf);
+                    saved++;
+                    return true;
+                } catch (e) {
+                    // caching is best-effort: if storage runs out, still start the game
+                    console.warn("[HKDebug] could not cache", part, e);
+                    err = e;
+                    if (e && e.name === "QuotaExceededError") full = true;
+                    return false;
+                }
+            };
+            return {
+                async get(part) {
+                    const hit = await loadFromCache(part).catch(() => null);
+                    if (hit) { fromCache++; loadedBytes += hit.byteLength || hit.size || 0; return hit; }
+                    const buf = await fetchWithProgress(part);
+                    // retry later, unless storage is full (then holding parts would just waste memory)
+                    if (!await tryCache(part, buf) && !full) failed.push([part, buf]);
+                    return buf;
+                },
+                async finish() {
+                    // parallel writes during the download can hit transient IOErrors; retry one at a time
+                    for (const [part, buf] of failed.splice(0)) await tryCache(part, buf);
+                    if (fromCache + saved === n) err = null;
+                    HKDebug.cache[cacheKey] = off ? "caching off" : fromCache === n ? "cached"
+                        : (fromCache + saved) + "/" + n + " parts cached" + (err ? " (" + err.name + ")" : "");
+                }
+            };
+        }
+
+        function getParts(file, start, end) {
+            let parts = [];
+            for (let i = start; i <= end; i++) {
+                parts.push(file + ".part" + i);
+            }
+            return parts;
+        }
+        (async () => {
+            await HKDebug.applyPendingImport().catch((e) => console.warn("[HKDebug] import failed", e));
+            const [dataUrl, wasmurl] = await Promise.all([
+                streamParts(getParts("Build/hktruffled.data", 1, 45), "hktruffled.data", 926889798),
+                mergeFiles(getParts("Build/hktruffled.wasm", 1, 2), "hktruffled.wasm"),
+            ]);
+            var buildUrl = "Build";
+            var loaderUrl = buildUrl + "/hktruffled.loader.js";
+            var config = {
+                dataUrl: dataUrl,
+                frameworkUrl: buildUrl + "/hktruffled.framework.js",
+                codeUrl: wasmurl,
+                streamingAssetsUrl: "StreamingAssets",
+                companyName: "Team Cherry & Truffled",
+                productName: "Hollow Knight",
+                productVersion: "1.1",
+                devicePixelRatio: HKDebug.dprForConfig(),
+                // prefer the discrete GPU on dual-GPU laptops
+                webglContextAttributes: { preserveDrawingBuffer: false, powerPreference: "high-performance" },
+            };
+            var container = document.querySelector("#unity-container");
+            container.hidden = false;
+            var canvas = document.querySelector("#unity-canvas");
+            var loadingBar = document.querySelector("#unity-loading-bar");
+            var progressBarFull = document.querySelector("#unity-progress-bar-full");
+            loadingBar.style.display = "block";
+            var script = document.createElement("script");
+            script.src = loaderUrl;
+            script.onload = () => {
+                createUnityInstance(canvas, config, (progress) => {
+                    progressBarFull.style.width = 100 * progress + "%";
+                }).then((unityInstance) => {
+                    loadingText.remove();
+                    loadingBar.style.display = "none";
+                    canvas.style.display = "block";
+                    // Unity has its own copy now; release the blobs / stream
+                    if (dataUrl.startsWith("blob:")) URL.revokeObjectURL(dataUrl); else delete streams[dataUrl];
+                    URL.revokeObjectURL(wasmurl);
+                    HKDebug.onLoaded(unityInstance);
+                }).catch(async (message) => {
+                    await deleteFromCache("hktruffled.wasm");
+                    alert(message);
+                });
+
+            };
+            document.body.appendChild(script);
+        })().catch((e) => {
+            loadingText.textContent = "LOAD FAILED: " + (e && e.message || e);
+            console.error("[HKDebug] load failed", e);
+        });
+    </script>
+    <!-- premade Godseeker save (slot 1 on first launch): userN.dat bytes, base64 -->
+    <script id="premade-save" type="application/octet-stream">
+AAEAAAD/////AQAAAAAAAAAGAQAAAIDxA1RGZUlyVFpEUUtzaUg1NGJDTGtGTFhSd0hXRWthMnBZeHRQZkpwbG5FQ3pKYU1GY2puQWc0a2RrQkovMiszOFhSZVNrbG1BM3F4cEp2Ym5EVDJxdjRoVVA4K2tmbWY5
+TnUzcDhFaVBLdmFvVndES1N2VHk3MTJ2ME1ML012enlIdFhhT2VNZDh5YlJTTlJIallCME9KSFNJdXUwT3BRbnhDVElCOVJ1VjV2RHVDcWFkRVo2RjIwaDBDblR5ZVZGOGc0UlRnUHJJd1JoUzBOOHg2QUY3REpR
+SE0zdklQNElUUm0zamNjclI2NDVXbTRXSllyNWNWcnFOTjlYdStTeFNhUXBmV2IxSHJkZDVKc1NURFozWmEwaXZ1NkNVcHFRd2lEQUIxckhpOWttbFExbmNmaG1zS2JGa0JJZ0RqQ1NhRUFva2N1ZlVSbEVNN0pR
+bTNKT1pQWUQyaUxhQWlZMHR0WTkvVUVmUDRnNmsyblJIZnhadHVpWXRxNUxiVVFIc01rTDFHNHB6bkgrY29QRFAxWHlwZXl1ZTVTakNoZEVETnEzMUFWK0lqWmJDQXJHTXk4QlcxS2RqTm9wb1UrMDZiQW1lU0FD
+MVRRSnZ6K3NKcFV3eTRha3Ztb1NXaWRXeVVOTXFPdGg4b0RXZ0VEUlZsUEs4NlFCaUYwQ0dCTk1RclI1bU5lOGRHMmlzb09mYUhsa0JNcVFrb1NQajltMEVxR043eGxCbkFFSGRzWnBlY3BtR0VtWUszdU1RdFQy
+d3I3R0IyMGpLQmwwY0VyNTdjTXdVR3p5clNEZzc3YnpSQjdEV3o3Nm5LMmJtV0FJWWcwWmxpcW9ldVRMSmRGM0hpbG1FZHdSVWc5ZUxoZE1PU0hQZDErbG44SkFUbUlMMHVtL1Y5SjF0Yk1yQmgrYTZXa3BaakFL
+QS9WYkhTNHJKMGVXMFdBMkVsaE1jNlVzZVdjTWxBWHZsWjFBZk5RT1BSbnJFcFk4NVdqS3ZGYUpxeU8xc0wyZU5YYkVUMzFlaXYxbDkzR1BaUmVUdlltL3VXbnNWL2J2UFFLbUk3Sm13ZlZmM0hMbVh4U1NvSFFu
+eFNyeTV2aDFDYnlVYVpOU09FZ1RXcEd4YUJVYzZlLzVybUh1eGJUSTJDZTlwUEp5M3JRSFd4L2U0aEZJdC9JVVFIMVRocHhtL3BYRHVDbGZ4bW92ZUV4ejg5WVJrUUJBOEhwVHZjeUxYZmVJU2R3em03OTIzTy9H
+QUVOdlFTcFdJVjBFelBQVUFRbCt5NThvaU50Z1RSeHZON01XVXE0VXdvdDAxRXZZbnFHSjZ1R1ZhdERld0pRd2JvV1lUcXlZWEtDMksrRWI4MHhLQkV5UXdiMlF5UzJsdVZjK1QyUXNDaWZ0T2ZiZ2R4U0FMUUlR
+V0FOOUE2YWtlekRraHJTU0hTRXJHN0dKUlNUWnhTWE9KZUZEOG55REZXSXBBdm02ajBjbXY1QTZwZUU5ajBiRG1HK2pJemlJZ2FjT2REWGxMNnFNd2ppLzYvcmpiUnNBc2RQbnhOYW1Pd3pRNzlndHovL1JNV3RL
+eTF1R1VBbm5ySkp6ZVRvNENZWGZ2YUNjaC81WDRYeENXWUdLNGRnZXJKSWVTVVZGU1duWTg5NG9iMGtad3NXU1ZzZk1RSEFtdzNyb1lvcHNldm03Z2h3UHFFdDJGVFdvbm5kMW5teXMxYzRJTklBS24yUkxkSDlC
+ZnRiQ28wTUlHVFFrSFY2Vk5FejdLWU80cVdWQ2Y5d2xRT1NoRE1IbG5GeUQxQ0pFWkd5NCtGajNVT0VObC92Z0phT2QrL1pzQzdsVkExK1R1c2xxd1VaYzVaZ05SMzhPS3N2MEFFQ0JLTkFWdEVXS253RlFkUm5x
+dG1UV1BxSEJjcmljZlJUejNtVVpTc1JkSkEzZVREZzNabm4xODJ5cjVDOGJ4R05ITEpmUktiMVdDT1NNcUhqWUR2TlhrSndZZFpNMVJVcGFBTTVrcmxhT0Ercm42MGdnRVI0Q0lpRzREUEFZdlZEUnBxUFhqMFM3
+STRIc1VDbHpyeHI3c0E0YndqQ3N1RGMxTDE5bG1jMkY4bVFQL0MyNTVlQVd0YlFTbmR2UUpVMjdSVk5CM25NTCs5amZzQ2x0aG15VndhTjgrREc4OUZCRlV4WGwwcVlYMGpTSFdBQktjVFhYVlhIOEg1NnpLaE5q
+eTkzajQwVE9yU08vM3l3dE5iRFlBQy93TG1nbkEvZDNKZW9wdmxBcFdJa2wzS2FWT0MzZGNYT2RoQWtub05xQUxOcG1LT2pENVlmWjV2MVIvbFU5SnpGa2xJOUgvYkMzVzh6YjczaXZnbTE5NWszbGNIL0E1V3pO
+MEFYT0U2SEN1MiszZGdrM3Y4YmJ4Mk9lN3p2ODMwTFNjZS9XZGVJV09tSjcwb2JyYkZBSGJ5SzVtYy84cWlDbmFtQmF4SkhUR1ZsQXo5RTJpbHQ4UHBpUmtwZFZFZU5KbnZDY0h0UnJCczlOcHh1UkZ1WTRoQ1Nv
+RFZvU2djd1pBYW0vaVNlV3dtMzhVM1F3MldnZW42N0ExM2N1aUV6TDZMMHFtSjBCZ2o1RGc2OVRqcytnQmFudGd2aFQ2dDNpaC9ibTQrY1lDdnUwV0trMGlGNk9XanZrVWFpc1YxOUVaOENkUVR1eXUrQUhvL01V
+Z2xPVVFYUWttYTFhUjM0TFNmeThyOURlWWNGZWI1V3hkWWphZzBFQjlTRFlqdEUvWDY1Rllzdk52R0ZlMGwvOUd5WmJYMWk4aGxtTVVtcGJlNVM1S3BBR1hvcDZZSzA0Nkp4Y1diZWhFc2FDc1hqbEx0L3BSbDRB
+eSs2allJV0VvOHlEK0dLQU1YKzMrR1hhamVGdFRoRlJmeUNIOU5SZGEzcnU4M1pVUSthMklnclFSV1p0N2xmL3FmU0MyOERYd21KclI5NkJyVHlxYTNYeGRuUDdKZnpDdUlpV05pMDVCdFg3bzFJSE4xYkhXSWQ4
+c011V2JtY1RwWWovY3M1eVFRQmsvNWRFbVE2VnMvbFVaZVJlL2kvbHFPUVBoS0RuOWxCcGdwUTliWTh4KzQvWEU1S2JWMEQ5RkNqaHBtZm9XSERhZlZPQVBzSjRIN25VSnpBSkhDRnlkckNCdnhZQ3dpWEFHMHEx
+a0VNVGZIbmsyN01aN0g1b0h5czRKWnNpMTVIRkFqL2hUNHNWbEdId1hOM3htQW04a08vWmRGcUhKM1pvbiswN1FVVUdZcFNwMlp5RGZLR3VmQURKMmdGQ1J1dUFzZUtKRGIwY3RiVVZ6Q3crK04ybUVyc2VIZzdt
+bG1TVTVtaSs2eTloK3pvVHN6cjh4T0pWSlJYeDZMMGdrRzdpazd2Y1JaR1hjbTJiQkN5NVUyK0ZjSlNKTzNlRFZnVUQ2MkszbW9kcHNHMmFzdDBNZ2txMDJEaGdnRlZOWVlVSXR2eFJXdTFzOUpSb3pjOTRrZTNr
+V0NKSmFWSGJQVjVZN2JQZU01UVFxODVnUmczcjhFZnlnSFprT0Q0cEQwdXBxSHgxanRDNkJ3R2F2SGdlZ1FxSmgrd2RzQUZham1URWhaNnVyVkMwaFJqbC9RMDUyZDBKNDNjcGozeUcxWm5GMUhSZnN3b2VzZWo4
+L1lxOUNPb1IwYXlYbEpIdlBMS3FtRjJ5UEZ3WHVER3QxSlNWdkZHWW9idzZSTFhHWTVpYmpYS1RwejhEeW5LRWliOHhXQ29FcTh2YnRiMXcwWDdwY2pwRzNta00yMWtLNVkwVXd5M0RXNW01dkxxRERCMnQ4TVZN
+NlZxYVltQ3FOQU5qK1h5cFVJa2tPUURSb0x2U2Z1RElDZlQwUm5FbUVJOFM4MWdlZ1VsaXJ5ZWtlQnlqdldrc21OeXM5MExXalBxYWg1dHZRNXU1Y3VIeElXMU1uekU5TDZSL292Uk9YRVFlalRzUGNTTFY2TTVO
+c1M5YXhMRVNTODM2Wm1JSFFCUm9Vb1A4cFNXRm00dStab1hqd1MrTnZqUGxOS0dDZ3g3NlVGVkk3RC9VSUNTcDBvY0JsWTVHMGpyODVBUWNQdTFEaGwzS1FvY3JKWEJNcDROcDU1YkUzaXRhTEZIMTlrbTNXY1dQ
+WE9CVnVxNnJxZGVnVy91b2pVWFJqSk51citUZElDZHNJWEtSMUVZb2RxRVRadUplemdkU0dIOUliU2lOY2NkTnl4MWJkd2hnRTYrSnF1amNuWTJTTXBkd2IvRXVmUEQ4d05PT0VxbHBTbzhOZWFuRWRNZ05hajBl
+RkxZaUluRHY3SGh2T3NXMWpHOW15NmVoM3NERHdRa3J3QllMai91ckMrVW9TbkNkNTBKeFYzcnc1dzk2NnRnZ3FYU0MrYnlQcWV2dDc5dWNxbWJJVWVYVFZIeWNGUXNIcWZwTnJqTTM5SnpCWWlTaVk0ZmhDTUwv
+WVlrRWg3YmpOeWhKSGh3ZFRoYndGdFppN0VCY2U1Q3RINXFuVFRreDV3clE5bFVlMlA3aXFaU3kzQWhBMllYc1k4azJuNFloRWpZbVllazFIUlhpSS9qZ0NjZ09SeUlORDg0MEZ3ZDJIVFcwM1VteXRJM003QzNa
+V2hPR2w1aGxkem10YzdhYmJrd0pHakI2amErcnVYLzd6UkZjK2JMWE5uRlNIdWtxK2xMZFF6OTZnSFpVTHpldUtCU1haTzNtY05kZWpkVDJLY2ExV0NZQ2w0S3huRkFrMnp6bVdrMmpaWGRQN1JVNTdUSkRMLzM1
+S0ZablJEUUFHc0V2U3gvRng1WlkxYWhkV3R5eHVqUDBONVlOOUM0YXJKSjFUK0JsREpmZGJTd2dySG94VDJRUzRuZzhGeHZwRkt4R2FLMzFJcldrTUF4ZmlQaDY5ekpKbHprRFhmTklVMlA2UTh3RWFNRE04ZEpj
+dzl4UkxmRlRETGczbVZmK1RqQ0tXL2c1dmVIRzI5YmZlUDZ3UHkwRzN3L2wyd3dJQ2VkTGt2VkdxVStubEdNQ015RHdBOGsrZ0ZmUElmc1BNMThyMHBKenFsVEhnQ2dQdkhtN1BFcjNUQlgvbHhROEM3bmZrVVBQ
+MFAwOC8vTkJ5US9BWWU5djZpQ0hqbTlzenUrQi9UT1RXbGo4dHdOdXlRQ1J4NlkwQjBWY1pxMGhCVklCV25IVk9zaytkSzVHeVFDRHgrTFdlb214bEU2UHVwMzUvL3Z3V2l6R00zbGNYWEczdHRURlZZVTVGOHFa
+N05hand2eGhodVo3N0FUYUZiQmhRWEVBOExFSjJGRHErUFRNNVN6bGZPVWZpOVIrb1Vpd1gxQnEvYWZwU2hFczVMeTZSWVR0d3Q1NEI4VjhOd3Y0Z2tnSG1XdzRZQ0VuU1pBUEt1ZGlBZUlGa256YzFZbDZrZEpI
+MkhoOGpkQS85ODBJajlpQVJ4U0QvY0VWbjgwYjBiUjZreU5ZNWkwTk5rbm1XVFJ6RTBlMk9CaVZRUzF5b0laY0RZNWlxV0QwNWF4dnZsZ3BQRUxYb21PZU5iMXhSaHE2V2ZqVDl5SitZbHdOam1LcFlQVGxyRysr
+V0NrOFF0UWpJUExDRnJQWmJTNXNoMm9JcnlJV1hBMk9ZcWxnOU9Xc2I3NVlLVHhDMWpMMFYyTzVHNm9VWFYxK1Y5Y0pGTkFFVjdvSm5zbkJqd3UvcnpsOE0zd2ExVjJZVi9PeDBxNkpTWU5oUjN2cGFKc1hCSE1w
+aW0wSlc3ZFFxYzBvdTVBV0tXTERPbDFlMjdHQ3JZSlFnNHQxODlKR25ZZ0FZa0srMk41dXYwU1FWcHBtcGQraGZmZW4vbm45L00vYUdEWWxsUTcyS3VRUDlBNXRmNE81cnQ2QXBUbHFydlBicTFzY0VQRDBNUUlW
+OUQ4UnJ1c2lRMFgyRVNKS3d3YTV6TUJDTTNERnpXaDJ4M1dvY05CRVF0VFRIOVFtT3pTdU9yWVNCQ1M3R3VkM0k0VWhpbGhGTytNTzZyb0ZtRFV0ZzZ4TSs3WFJyY0UveEN2MS9NTEdySVErYjdQbEtQU0t6WHdN
+OFN5RVIrbGZaRHV6NmJUUjV3clpyR2NTbEdYbkRkWnpjL2pEMHJ2ZW9SVzVHUGJVOXd1aTdESkYxVTlEYU9nWVJsYUM5Rm5pN0dyOXArbEtFU3prdkxwRmhPM0MzbmdoSy85cjhkUjZyUW5jYkxmcG1vcDdvVlFT
+R3dGN3d0TnhMMGxXSkVOdDRmN2NMend0Z0dvWjI5dXZGek1iYU52bU4rd0VBWFk0aWF3WmdHOGUra2tZa09OTWhHU3FGRzcyT0tJM2ltTDZ6K1kzN0FRQmRqaUpyQm1BYng3NlNSaG1TNWVUOHRHaHlVUk5Sbisy
+MC9CVUc0eW92LzhNcGV3RmFEUmFzQXJXOXA2NWhROC9qd3cxSGpBYjU2YVkvakhKSTlobWNqckxxQVVqcUR2ek4rVWVwWm5WYWhTQWMyT0QwVWxsekpaV1YzZlNCWFdMdmNsMk04SE9zYldIdHNYZVNNNVQ5WStL
+MVBiRUhZNWdrOHRsZjZ4ckpreFpjN0l3M2YzeHZYUWZiRWJKNVhpWVduemU5bjh0NnBscEtQUUJIQmtMZ09nYkNWNm1uUUNMNmYzZi9hakRWTm82TnpQL1RuME8ray9YS2xsazhxTW1oelZ0ZUVSNU5JL1B3ckE2
+eUMrR3BFZ0czZVFrT3poMVAzTGd3MDJ1SG9UWUJDd1pCWlJvWElkaTFMTE5uU0hBeEZWbGZrRkV3WHY2dUNkYVBPS0M1M1NpZU8xdXhzc2hZNnppSmpxTm5zMFVlOTZqZlptTVFrbHQ0aUwrK2RXb0lWTVQ4TE5k
+Z2VVcmNkYXZBSnhKRW9yTTFrdDBYcUNpTkcyVmllL2tNaFRKek5zaElVSzFKcDhkZjdvSEdGSG82bWU0U09EVXpyazNraDRRbE4vY3VNTHhUSEJYRlAyNjZ3dTZxK21iNko1cEYzY0FMWit2QTUwTlZRMUVIYzc1
+QXBoSit4ajVSaXd2L3pMYmJiTHNmL0lFa2IvNTdHcCtUdzFObThZaGdlMWhmZFVRbFErVERnenFDQkhSc3Z0aTcwNlpMdGJBdU5mRTZpVlkrcDQrRS95MENXNUd4MDBMY09jcTBLUXdxenpRc2NUSURkWHJSV2VC
+bklZa2Zham52bzE2a25pc0dZYzlGbmVURWQ4WnpJU3VSU2pyUlpqajlkYXQ5c1NESUNaVzJaN3lkN1BlK1J2Q1FnWU1NMzhoMnRjZkl2OFN3cCtCVFEyVWVOYStHMFJvbTBpN0ZkblN0YUY3aTRiRS9GQTRXVy9i
+ZXplZUh6UTV2d05nR3Q3U29MR200Slp0elNyYm4rOW1lWlVraVRHeUJ2akNabHJqUmx4VDFqeGhwLy9TRGhOYkVHN0doMjlUZ1BkK3FFSnRwVE9IOEZMNFVPRGkrWTBHSW1XQWk4d1FYNWhybUxmVCtydmZrOG9J
+NzkzYU1wb0lCM3QyekVzN0Y5TmhYak5HM2dTTUdrSDNScUFFdVBzWGJLKytFMVh0eno4UkVUYm5UcXJKVjZGWGJKQWlnaXZ4Qkl4YndrTU1wZ29zaUQ2WDR4M2tHNHQveG13cEwyaDQ3MjN0bno1VkViU0tmY1Br
+OWJmdjNSdENFdUp2L3h0WkN4dFpCYjF1a2xsazhxTW1oelZ0ZUVSNU5JL1B3ckVtVWxXSGJEYmQ0MFF0Z01xNmozLzlaU3k4clJmTEt2WnloUS9SQmZXcmNNd2wwTFpkajIyNWV1ekppZFJocElrWDVjVk1NTGtm
+ZXE2c0g1Qkx4bWlnREJ2MTM5NThYNTNnRkY1ZkxMeU9rckcrcTdweXprRG5VN0xaZm5xWnQwaWpPNVpiQmJ0NlJZazVkQkZRc2YraElaVTkzU3ZZd2kyMVRuWG5EK0F4azFkMWt5UXlkOG5CK1VBTDREZmlsM0F0
+NWk0UFRJTUVSeFd4QnhVY210ZFVaSE9udThDR3hwQnpYcmhFMStCc1FNaE1LaG9qdDZXbTNrN2VCdllZdWFxWUluS01raWRRZ2kwaTVHUjJBZXpLV1dUeW95YUhOVzE0UkhrMGo4L0NzTmw4ekVGTmVnbkppYTFs
+WnI0cjFzeW5kZ3V4QVNlUjZmYjVqbTlNZG5COHpDNng4anE3Nm8rUnZNdWtxTnpGMXNjeE9OME9ORzhZWDZzRU5xbkUxQVlQbmdicWc0K1ZQY2JKZ3BFUkFuQmZpaUlrNko0YUpjVThkMzI3Vng1dCtsbGs4cU1t
+aHpWdGVFUjVOSS9Qd3JMcVdXYk96WEtwbkdwRUFGS2o4Z01LRWlWU1Y0cFQvZUIwU3ZFVE1rTVZrRXNQeHlnMk5ZMUdqcThWcTc2akd0NVpaUEtqSm9jMWJYaEVlVFNQejhLeXV5NlVjSFJ6bnc4Ti93RVdKemRT
+U2hGYkZBdGgvTWNYWk5pSkJiRGFBb0FzK3RzMHZ0K0dhcVo2aTl2S0pmK3FGWC9sSHE4VHRqRDUwaDJsR0p5YlU3b1hqaStuZTdyd0w1dDlFRVM1RUxKVU9KZ1l4YzFrVHBVZzRicWZDNmlidEVSYjN0OU5qUnZy
+Z2dpT1hRS2lCZFFYbStPWmJKQkI4ajYzZGZuelZnL21oNWdkaklKUWxBdFBEYVh0UWQ5allDc2VNdWZnbVhLZVJlQ0Q3a3gxL1orb2VSb1JGWnIxOHBUcDZnVFc3Sjgrdlp5b3ZDamRXelp3bS9TdUFaOVpCamlG
+bEV6T1Q1bCt2ZVQ3Yk9vMHhraXNsWXZnUHJhcU44QzJRQU9ncUVxWUhiVXdZblBLWGJhTmQ2WVB6anAybnhHN1BpNllCZ3hXZml6Zm1lbzVETnF1Y0F0bTdHWTl4Y3pNK01rVmxxUk10amY5cHRISUU0TnByN1pw
+VHFicVJ4YkJEbnBYUFhhSTVWS3pZbXpWRUJmM0JtUFcxN3FUYzhxOEZEbzhIQjhTQjloZUN1OUg4ZzRQaGN1cVRPY2U4Nit5dmZDa1hpc0ZtKzN2WTNoQ2l6dm90S0JOdktjNUNvNEdtZUNaRXNEajNLSGtDRksx
+enRTZVR2TDVEbmRYdUJqOXo2VTJNUUI1NXpOenRqdHN0U2ZSWlJ3anNzT1NidWFqVE03allOUmVKRmtJMnhVMktEZFBXVFJrTExjU1UyZ3RSdG5pVWx0cmxLVFVhMUNkM0ZtWTdGeFkzSzRlV1FlZEQ0bGdZWHJE
+WXhEdEQ1eWVkbUx5a0xPR1hMemFwUG9lNTR0VnJoQlo2SFpGc2ZZbERtK1BkY0t1QUgvb0h0VWRQbFkrQkdiTG1pRXE2VFZ3akIyVXN6WTY3bVRpbDlxVjlmK1BmZk03Q1p0eWc2RzJNL0ZvRS9pOG5zekVNSnZ2
+Tk0yQ3JLcGx5WVZDQzk3eGR2MUVuZUNIczZxd052T1BPMkhIWldKY1c3clhMWEovWEtYbW9qODN2VWZkNnZDVGlSdEFWKzRPeTUzVXZmTjVJaDB5QWZhU09HZ3FTL3VmamN4Zm1MWkpNVW0vdW1uYXVaM1I3RkV3
+OVVSelNkNFhRZzdsUnpqK2xtNjFKY0FjYVF5TnphVjRGdkVpZmY5dExjZ3RjSWZxWHI3cE9zVzAxZmJzU1U5NThpVTJMWjFHTDdMUVQ5dDRYN1BnU01IaldoRUhDdm5JQ2NkaTNVTGcyVElZQlFSY1kwcS9acTJV
+dEFsWlRUbzgvK0l3WkhFZVR2QVA0SGcrVzM4S0gwOGNtbjdJVm9Zb0lKWnMrL2xLNGt3YXNRMDFXRjgrV0RyU1J5R2Naa2tKU3VNdFVqSThIUjRuMVE5OFFITis3cjBrdEg0ZkR3UTNLamtYa0o1bjRLTTA0dEJO
+UklWNVV4aDdGd2RQRS80MlZYdXlIWjl1dERqSU5TTmRGY29YRVYwOFVXNllWUTVwcXVaQnlsOTRoemJQWnJnSHVsbDBRS1RDOUg3WVdzazlNQzVFY3NXbmd6RFA2dzdFOWFnaVJ4SnZPN2JrVHRrS05xQWNrL0NK
+Ym11VWkvdk1KeGYzRGY0NWJlNHVnQmFqTC9hTE1tRFRVczZMVFRtcmJjZGdtWEUvMnQvRDRPb016Qi9sOERBTWwzNElhN2ZybkFiT2V4ZVY0VGhtMnFROFhXWnJMREdFdTV3ZGw2bmJLQnhuVmYzL3dmeUlrM29z
+UHlrcjBSNm4xK0FvT1h3UzlGUkNOUGh0NWkxd0VCM3hSVDg2S05pTll1S2N4Yk1yWHMzN0dDblkwdTZzM2xCdExGVm1TcTJSYXllVW45T3NIaWh2RGtERk9JdG5pbklMQ2NrRnBLVXF5Q0VoY2lsQ0dyRFczQlU5
+V1ZwN1MwSzJXREZxRU13U3g3QVlJaG1zTy9UNlJOQ0F5cGQ5YTFkbzhDa1JQNy92R0hyd1VXYUVsT0JNMjFLdWhGRE9qSitxQlo0VS8vSE41ZTlkRWZJR1BSMGtGSElQWDhZWmpNQXlzVkkzcFBuOFBBWjE1d3Bv
+Zk5keXVmWEdSbUphdGJ0VUN3MTQzK1VwRVpKYnRoL2o0UjM0WHhLOGFEaVJNL0N2cFZNaWVwMVNaU1IwWG9VUzNybng4QXBHYTRKblYzM0xMVllTUHJxVkJiai9JalpueU9tbmNYZzhaREVCMUNGaVl1dXovK1Yw
+K01FblFHY0grdnBMRVo4eGJoOUdsSmxWbWFzY3FhQmpORks3VjZFaEZHNU81NXllRkhRNFdzbC84dTg5S3JsVEpMRWJzZ1M2NW1Cb3V3YTdOT3JMTDBSL2F2VUIydExnNU9mRXNRQVFCZTdOMnlaQS9ER3dyN1U4
+Mm9Gd0VzNHE5NjlwMUw3c2VRclExTSsvYU02YmFpYjlvNUszblpxeDBnSEM2MkI4NU5Gdnkrcy9zRnk1YUthU09NUmI1ZmhKbXM1eFQzU2FGaGl0WlNsVG5nTzRDM3AzL25nbThveVp3NlVzQU0yaFZVcFlkdTJ1
+VHlFWU5FaDlwc0V3YVZhUElwYS84WVppR2hhSU5vcnRYaHQzWG4yNWdMRTd4dm8yU0lxd2MrMkJVTkQ1S2kzWG9mNVRjeGlrK2lDMmlGK05vdkgzN0xNRlJ1WjhFcjh4Z01zczkwaU5YMUFEUHhYUDNFSmxGVTNU
+cktLWWNoQ0VXSXBlYzJ6RTdkNFBIOFRPYVZ6Q3pTeEk5eVo5QmhXTldISjRnYWZ2TndIWEUrSGVxMkFrRGxtNlN4WkRmS3pteUd6U1drOVRGYWtnM0V2cXlQYmlvZDVmNjhVMmV6Ui9KN2VVblNCU1FiWm1wdGRH
+THB3V0pPNzZVNlp5Umt6RkJsUEpoL1phcldMTnZmUDRWcWVsS1FReU1QNG9FSVVBYXZlQis3aXdDdlBxdG16Qnh1dUZ4YWRhTzBiTmJCRGNjeDZUSkdkS3UxUUN5ZFRnV2lGT21KR0xvZmlyMHdKOG9Jc0ZVWXJG
+OFlTWDVDTmdNaXhVaU5PVjljQktLUGVubWJIOFRxUnV2UDhFK2ZLZWhYa2c0K3NhNURGcmhQa29QckNYN0NwU2R1VjAwdzRsU1R5N2JMM3dmVlZBWk9hdXh0WGhqWXZBVkpJeTNobnRQWkdDeisvOEwrUXR5R0Yz
+T3NZNzIwbWdRNGVkYTNQZExHTGk4akRwdjJzWk43TVcwZlBEYkU4Q2kwck9HS3p4bXpHRGtmYlY0WTJMd0ZTU010NFo3VDJSZ3MvdDRzdCtNTWNQQjMzRFdZOGw5RDZNVWI2T3dCUWdoRUJqZmxQMnBUS0N3QVc2
+SVk4R3dmeDcrVC9Db2hIQTNJWml6aDV4R1QyRlREK3lSNk1leWdTSUZWdDhxdXg4WFhFSDNVZlFQTEk0bElpaW9sMlJOREFzL0MxS2J3YXB2eDZ2R01oS05wdGZTRjZNaFRIUEMyYSthdS9FVGluNXBnQU0waGVs
+SEdLMVB3cTU5Y1VYa2U2a0FjalpwQzQvYUxuN21aWGhVTFAxM3RnajEyam0relpBTlhFWkRwWlh4ZGJ1aE80Y0ZBeDNtMStyRnBqVlBTQjQ5SThCdEk4UHhZN0hZVmsvMnlFaCtvZnNWUU1TV2RDSHF5VkRNaGVN
+dlpnTG11TGIzc1JrVmw5bzU1Zm1IazZseUFrZVBaVEY0NjZCR25CM1Y0RnpKbnUyaWVVTjl1V2MyaURQeDUxSW9BK0Qwb3ZMa2JtbHRmVjNEUXpnazQvc3Vrd3VtaDNIUDRraGNReUh3dmUydVR5bjNLSGpyMC9r
+eWRVUW5HOURDOUZvYjNoN0tXbkRhRlRjWXVNTFNGQmxVdTVPbjU3SFh5ZmtHWkNqbFBBZTdkbnFEeVgvZ0NvQUp6NlB3amdZOGtVbGRmdWlST1cvOXVHSy9PTDU5SThmMzNzajJEcVRYb3dWT1MxSGRadXgrdWYw
+M0VBRGRkdjNQQk1FUlAzYWFHQ2pkRFFFdXlVYTJLKzNGR3UxKy9TaWZNcWxEOGVyTFFlYmZ5U0VzU2RhcjU2LzVjVG1zQyswUjZ4OHh6NWlaYjhjOHhVUFJRdzBlSjNLalA4anBRRTRiQng4ODZxcWtCL0kyTU5z
+NmppY2ZPSHVsN2wvSmY0em1iUW9UeG1mRGZRTWFzMlFBZ290NEtiTHloRG8rdFk5N1BMZFBsRk5EbnJwZVNxU0xKSEV0aWw1OWNyb3Arc0ZEOFRTY2dKOVllbmtnY013QVc0cnZONGRoT3R5QkFGNDBIdDVrZGxZ
+RGxzWkZPN2hnN3h4OXc3dTRHSEUzcXAzN1FKemZtUFRYMzY0dkZDb2pTQlE4MWl2VU5GWHpSeHJITnlxdHI0cksraE1YTU5wcHZjTlZrSTdOdkhmdlpoSWFRSnpmbVBUWDM2NHZGQ29qU0JRODFwMDVpT3MzQVoy
+N2RvV09lZ3hWaXAyeWxoN252VDZHenY2UkFDRlRDS2k5WFhrTFgrbjNTS1ZwRUZ1MFBFcmU3RnR2VTdoUGRrek5XVlBoNlZLeC9jcUkxNmhWc0hkaExEVXFSRFVJemU3MHlhNWlaKzF5T1ViWWFwNk13SldNZ0Fq
+SGcxUnNmNEIzT282Q3l1VXVOREUxRmNOclUwY2FZM1NOeWtmcTdWckVLbTkzRXBwcnF6bStEUTl1THZqalo5b2xiYmVmWXlyVEpiTzFhWkpLT1VJL0JZeXVPcTNtZW1lOUVXaFlxM0NRTjZoWDBxRWRxL0R0aGVT
+RlhyR2ZGemdDTjMrWFE1M09mMW5paVgyODdxQTV0TjhRVHFiKzVlMmFQeGY5Z1ZwcjFPR2ZRS0NWSHRjbS9MSEJSd2VCZmorcXN1ai9jN3AyNmJvcVM3Mmx6T1U0QWpkL2wwT2R6bjlaNG9sOXZPNmcvcG5vaHVs
+NnlwVkQyWnBqS1dQenpNd2M4Z24vcGVudjAyZWIwQm9SV2kzb1AyeGFlNVV6U2pUbDNTTkM0b0JCQmRETE1MWUZ6emE4L1A0Q3RqQjFwZzVaWTYwZjdFSWRDVm5jVTB3dkNBUXJSVDRXYmgyVFVXU0p5b3hxaUFk
+S3pqTkVvK1MreEtPNy95V2NDV3VlM3pMZ2tqWEpyWW9CenVWREtwZk1qVEdhSkkwdEt3M1NBbjZFa2M3SzBwTnhZT28yQVl3dGdyaDZmTkFRUmI3Y3RETEYxUmhLWmpOMGExakFaNm5sWVFHM0VBMVlrQjdQZlgw
+cnI4SjhWS2tvWU1UbHBYbTU3eGJTUWZwQmU4K25ubWh5MmdxYlVtMFhXaGVJenoxekV1T3R4ZVc1UDdIWmpXc2puTmlZY1RHMUMwWVpHWVlBTk44RVNmS1VQaWo5Ui9rSVZZSC9vMjhicDVPODlzWHZkL0RpaEhS
+UDhCWGNSdnF6WkVGSzByeGFvMDNPOEluL0dMdHJlU2NFQjRpUnVZaHRSb0V6ajNvT2wxV3hHRzdSeUJiV0xBMW4zWkpFVE1qbUR2YnZrWXdySm90SE5ZTHhJc1gySFhjbCthbWYybjdDYXRxWE1pUHpTS2lUSG5Q
+d1JoVW9YTHdnYUJ2WFFYemFjM1U4dHpDc1lSdFlhbm5Zd0ljaEJwVmJZMjZCYWs2dGRwT2VORy9aTGlFSThyZEtFRTBoYmhKNXZZeHpCWVNPaDZZYS9iMEtteEtPMmJhVzU1U0U0ZlNUNCtpKzk2WGFOZ0x5VmlR
+bU5FNjcyQUNOWmpVaU8xSy9lZFNpL2dDUWhnVXIxSTlVejRSeDFiWVAzTUNDYnljTnNPa29MUG1TY2JSckVIcW5QSTdsVnlVUHE4clFRcTd0Mk9XMHVOajVSRllDdEJkeVVwcDM4K1k3M0FjOTZtb2xUVzVaaG5v
+R25KNkZtL3Q3WDNRY1ltYTl6aTR6bTRJWnJYM1JjY1RxeUNCYXpzVUlCUDNPMDNpc2REV29BR2FDNTJUaFJNM0xLNFh4aUR4bitsNEJVSWM5ZnVqM0FRdW9WMytzSnNlNk9qZEpNbjV1emN5TWVNUTlLUW1aS0Vx
+azBmdm9lSDA5Nmw2bk0wSXhlUlprVlF4ZUxTcTQxeGtuL1RBYlJhM1NmZUlpZDlsVGhwNXZTdjdVVkFZLzVvV1lPQTZ2cmJFc05oamNWcUwzVnhUV0ZXS3BNNzE1VEc1NFFteGdlS1loMWdDL0NyZzhxWWNHWjIy
+YlM2SWFkVFJvUEx6ZEIyL3hVb1ZjUllxQm5md0hjTTNiamNwVUZUWVQxUnBsdG9HTnRGbHk2SnBKVzBpUE9oYllxS1paRXlCdUZEdFhZTHRYQUR0L1cxRTV3c1RUZkI3UEN4MTFvL2FoZmxzYUIrZFppVnJpMlFI
+ODlrS1VNUHRzQUViMFU1czJZOStDaG44ODdUdnQvQkVDWlRhVDQzQ2loN3FyOUMrVjRiQzF6eVFFTGRYTmwwZUZmQW5oOXNGckFCUTIrT2drb2dVNUVoeDhJdTAwUWNyZ01TS2grL09paHF0Zlhma3Q0Umw4YUdv
+RnRIVkw4dUhCV1lsZ2xPVXRMTXFjN3ZtR0VzUXAydmhaKy9GM2M1UmQ0cWxKQXF4TVlDckw0UjRON1crcEYwQXk4L0dQc0JybkdUdXNOZTRlelI3RGU3bXFQWUM3K0NOZG5hSHB1dWtRbm1oRElTV2QzaHhlc2Ri
+L0lHQVlRNjYzaE9nT0pRWXdBVHdvejFIMCsvWEVPZHhvMGFXL3FGMVJ6cDN2KzNMZk1ZWHhLaWw5TGRtcVhWZ1N3eWx6WXFuTHB3bmVjQ1k2TkFDWFh3U085WGVQUXIyaERTWFM2WDZSbVZ5MTB6MUNFVXYxT3pp
+WUdiNjh0aHA5WTZUeE1aU0tobjNFRXNoZktaaUtoUE1Vc2xuK0NJdUkrdStkb05KcTdPZFVDNk5uOWcvNEV3U0RwRXNzbDZhTDRkZjE2bHNhU1VDRVNoNGZ2bEI0NjBDQi9lMVNOejduYkJYQ1RQNFEyOUVBY1pv
+MGdJUmZSVk9iOE5WMEpxaHFMQXpuUk5kajI0VlBTek0vR0IrelFKSUVQY3FiYm5RaCt3OWlZUDRRMjlFQWNabzBnSVJmUlZPYjhOWFIxU2lVdGpKNk8yUFNYc29hTGMzMmlXNm95d0srSTFMM3hPYUlwT3FYZHl0
+ZWlmcVVaU1l3ZUlrbDFlVDRiWGNPUEk4MXptL3o4aGgwbFpnby9PTEVWOUxnQnBzUFBNbjc5T3B2a1ZBOEZyaEQ0cldhZW5SbnB5a2lZM3NRSXhKcXYySkZOajR2S3ZrS0xCd3VnRHM3ZlBMcS9ZcWtqRmFPVTU1
+L2hwZzFlV3c0MnZjdmVSNm9uNllpZTFRMVh1SXgwenFsZm5UTXVFSFY3bTZOenhMY0ZpU2tBMEN2Nll2Q2ptT2lkUnFPdXlaN1pXY0JzcElHV0dzMGh4OHZUOWNPcHlubjVUYUE4T0tSK1MrSVhoWk1hcjlpUlRZ
+K0x5cjVDaXdjTG9BN08ySWFNREROTjNMQ3ppR3I0cHB5aGZzOTk1Nm5MTWFIU3ZKT244WnVDSGlIbVJjWGVybEkxdjJrTitHOEpCYXREVmtZSnROdTRuR1JKZ3NPUktpU01id20zeWZEMnRacFBZRkdFM2dxR3Y1
+UFg1a2lyM0M4cnROanRCVzVxeDVMNWxCY2ZFd1prenhFNUw3RVhDV1ZDSndoc1dWa3hGdUtZN1BaNmx0dHdqbFlkQ2FvYWl3TTUwVFhZOXVGVDBzelA4SmNqem9EbkdSaGM2TnNJMFdjQy9uOEJPVzlTUEROOXhF
+S3d0V3o3V1RuU2thZWVIUittalpSU0dUMTljWlhTUFZXMUFaSjk1bmNFMTdndk1ZVTR1V0p5NGQyTjRDSXJJU2RmWHdDL3BCMW5XY05QWURzb1R1U1NhdWRibTcxQ2F3VXo4d3FYSHB1TEsxQkNDZUFuSnBWTlN6
+RFRUc0FGWURjbjlqQW04bmlxV1V0UDluQ1ZnUExlamVWaHNmeVBzMFhETy9rbDFQSlpMd0lrTGM2Nnl3aWJ6TGYwSzZ1YllMZ3N5SGprajREdEdFVGsyanRDaFpkZ3RyNU5yZEZ4R001a2lYTzRQQ0tKYVN1V29Z
+U0ExdlZSU3J3YXlLUnRIM1d3Z284Z3hob21VRStETGczUE5CSFBoQVc4d29TSEdTOUtrb3RrS2RJUUxXMUZDc1JRMkFNUzRNRGtCZjRjZVA0UVdzMitINXVodkdaeGFyRzcwVDZLTEw1emd3QWVkeXE4MGpjc094
+N1pJZWdFSzcyZC9uQ2l6UkxBcnpaZ2p1Sm1KcW93dVdRNVMzMjBSZjhoM2hNRXpETW5XYlhnVW1ReVBsK0pFQ2dHdUp4RnRkY0pOYUxnVWd0cXdTSHREL3JKMFF0c2wxYWI3VDZEcHcyc3F3aVBrWTl4QXNONmNt
+eU9QaW4yZENPU0RqVkJJbEJRcnVxU0V6bU8zcTZOMTU2RGFmMy9ra3RpSlIyUDdGaXdKVTV2VFJObnFhVjFFNWhsbGE4S3BmYk1FMGpxM0VkcVVqR3Z1OTZTa283SGZGbmxMTmt6d2Z4ZTYwUGRQZG9TNitmeDNw
+SDEyTTFNL0JYSk93dWRXbmNBOC9wcDdPQzdTTHJXWVJ1SnFXOHk3N1RlWVkyUU54ZEdHWjRKaDU1OUlTeEwwbllab0kzbjZHYndQOXh5Z0lOczZpNTVONEJxbi92bFA5KzVPUGp0SitXdmZwaWdVUmFVVnNNdm1B
+dnNVeGEwQU1hMTFnalZJRCtTSldMSVJSdFlNVGw3NTJwVFR3RmdXZFM2VEJTOXptWTZZUzJvNUczdWtDSFZzOFBrQWk4VURURklmeVdTTThGbFl1TmJ1UjJMcGdHNHFVV3ljYWVtMlIzbm1jaHZnL0lHU3h0amls
+NG50MXBXaVlIaUZZOHBFbC85bHVvRk4xZlVLZENSQXZZTEN6TGpjYVpNUWhLd3JwdklLeXViTWlQUFhweVhxZG4vczNRNEZncnREbkg0alhHcXNsOTRnb3BsS2o2L1hSQmFTL1B0QVlYcUVDVkcwTjBEcEEwc2hl
+bmNaRmVxU0VMb2JEeUdxQ3lFNnBWRS9Tajc3ZFZ6NGg0d2JLLzg1MHp2WUtOVmRHR3hGSElZTTZHWCtiNCt5OVBQdTRPSlk1ZmNFUnQyaHRCSXlpWTI3b0UxanQvS1dybTE5WEl0VDV5QVgxbEtJdlpTbW1NazI1
+VnFoL0MrbFVIczlYNy9vdUVDZ2tIR2FpY2RLVk9XbkR1MjBhd3d2M05RYlpTQjFtVlFSR3V1ZnJhSWJRWmsveUVDOXVTNUxJZVNZMjk2UEFxUitSaWVtYUwwd1d5SFNaTlYvdVBTQmp4SHQzYjRNYzZibnFUWlhI
+TEdIdEQxRmZsWjhpZS9SbjFOZDBVMEoxYXVPNWdMWjgvK04wdnQ0Mi9wNzdld1NHYXZTRUgrRmhFZmpzNGNoTHRLMXU3YW1qelBQdXZ5eHUreEhhaXFMS2RpdkRRbmsxSlRpNmNGdE5yaTRoc25tc1NkeWNPZENL
+SSt1L3BsZTJ5N2xFcDk5WUVYdzlzZHp1RFdDRURGcTh2Y0NoQ3pRQVdDWkVvOThycVJYNmgwSHd1YTZYNURjNjZlaTZIa0E1R00yNEY2a1crWjJxK2hJRlBRQzE2Ky9VV3JKTHNSY0xpOVZYUm9POWNCNnRrQWdW
+bERSM2NQSDVZWVg1UXEvZ0h2OURpUHkrSm9ROXc2bjRKYjRuUHlYWjhobmNRamxGSGdVeStIZFM1NjExQVo5LzFzUGdmZHdQZ1VoT1NPSUNOQVpKeUhKNStDVmphRmNvQUcvR1IxOTlNWU1ZNUxPNFFlSnp3MDEz
+d3lCMGhtQ2hLRDl1Q25kUklMZjA4RnQ1dEoxZHZNc2VKaUhiRExYc2JCaHhUQmlSTFFQWXhscmkxSE4rT3BUV1RveUxCQlExZWpWTU1tdytiU2J2dndWQ0FsRkhHcld3Yi82S3FjVUtCM2FILzBSeFNhRHk3aXVw
+dEp1WFRJeDcxNU9YK2lPUDlRVWlJLzEwUjlHQkxOaFdDWTYrWXZaa2tnbW16c25BaUVHdGpCTk1jZEYvUnlrRkswQ3V1QnRsYnczSUxLNFlvK3ZITEdqaFVBbnZYUWZEK29udDVRa3Rvb0RlbHBMVDVDZHViWDRL
+WDMrdWZWSjNya09DaVEyZEhDMVBxT00xVXdLMXh4L0tWR294b0VLU0UzNFEvaFptRGsySVpnU2QxQTVZckc4RTZPODdQc2Zvb01UWjVuM1FXMnJkMCt6WVRPTXhMcVgzeG5WYS9WOW15akNZWDRZK0YybTZpQUJw
+cTFsUlZXT1NxOS9oY3NmQlU1cnBheFl0eWNrNjFSYnRPcE9VMEJnSVQ0T1QwWCtnTDhqN2Jhc3puZy9HR0c2U0dtQkRlOTY5aEd0VGJ0RTdlU29QZzVGdm5XNEcvTURyamVNNWFsOUJzcUNNdFJ3bTZtc2RWbHRl
+ekhPM0l0VnpRMDEwYmdnbnhEOStrTW5qR1RuYmxJTjAyTU5jb0FjQ2xrZHJOQzcrVXFGNmZlb3pTMGVqUHZIQ3h5WG4vTXhMcXZTYndKSkV4M2huc1EyNjViOTJGZFdmYTRzeEZSNVlGQUlOeUNhZHhSY0U0Yzhv
+VGlhcjhoM293TzVTK2Q1ZnhEanc5eTJsb3l3QVFWYjBHNVBDWU1zYnRXS2RiMnNRUm5PeTdndjV4cDdMUjF5WVdzMDZFc25wSTNiWDNTaW5rdGZ1eFhXWnVWNSs0VHUrY1RhSTlzM2xLc2Vud25LQklaWnhYM2h3
+MGNxSUI3MGw5ZkF1UU1HbGRacnRTUnlNRUdBOEFNSHA5TEtxRlZLUHBDWkZHUjFJbXcrNDNDWUFyMUt1NEpZV0RET1JUV3JJaWFSUVFqaDNFUmtiTGxTN3Btd0FpcUlPdFJBR3Q4OE9uNGNoL1JPRFFDY3dYbGxM
+Y0JzUWYyQyt2czJtdFl2SE5FSzZGYVdGRHJqeFg0dDBJSHNwdjRPdWV5dGFnSEtlSzgwaEE2d3J0YTR1bTFIKzZST3ZvYjJUV1JvaVZwN1M2VWhraXAvZmxUdkhYRmxNR0twd3FURHJzQmxYa3huSEVuWDdVR3B3
+Ny9Dd1NtQk42RjU1TVpnbWpaa3JWcitCa3V1dHFtbG9sU3U2TTNrV29kOFNEK1V4ZXRsRytJekNOejAxb2xEU2Ezc2MrdERDbmp5MU5YMGlLT3NyTjNkbGcrTURFRVp6c3U0TCtjYWV5MGRjbUZyTk81M3AyYzFT
+REFaTk8yQ1FNdXZCQndyZllybGFRTXVCWFhZcnRZYWpJWWpCN2IxcnpVTHA0THNSb2c2dytUK0xKdTJEOEFZN0J6ZUpmK0VpdWY4b3hxaVdiRkllajkxNVN3enFaNWlrejFlcUFLOVNydUNXRmd3emtVMXF5SW1r
+VXVKMWlWbVlYRHcwRE9lNVBIMWpFcFJLdWh6eVJMSUt0Z3djajhpZmUxYitGeDlMVUEzMlJyZm5aeEFFa1czTEovakNTQXdiYnhRZTd0algwY0ZKVGo4cldvQnluaXZOSVFPc0s3V3VMcHRSbzF4YlZ4ckcxN2t6
+SWptTE13RExSMDRIMVpsSE9aTFlUQTBMMUhkWk10a09nNE02ZGZMTHFMNmRIbmNUWDRyNUp6STF2VkVGR3FtUUdtMGZEcnlnSUs2bnUzZk5PMGZna2gwTVlJbzhFSWFyaXBKeEVaRFZjdHNxTEQrYTE3SmprMkdB
+S1pibWY2VUJlUElsQnZZL2p4QkdjN0x1Qy9uR25zdEhYSmhhelR0bUJ1K2NxZjVDR0ErQXNsdnczNzV4c3BYdzg3Q1dvci9yMmZiVktUVklRUldkWnhjbGFZb1FrM3o5SmdUY3ZBSTBXZU81K1ZhMTJyM2t4UTk5
+SUVPakVFWnpzdTRMK2NhZXkwZGNtRnJOT1M3cEpiVXdjaTNsM2dIbDh3S3ZtRmJJZHdsazlmSmNnRTVQUTJwd1lzZWNIU2dYTFhmZXlhY0k0VG1WTmYrb1JmRUs2RkFnVTZZNjhENGhFb3pNUGNCbDlOWklMVXh0
+RXdrTS83UjcwOG9McTRvd01uNjhpT28xeGd6clU5S2drQ2tIc2QwajdRR1RYT2huT2x6eTBzMUtQQmNjdW1jdStPS0hiM1RKN21uUlBHNXNBVTA3MXlPUnA3M0crbDN0eUdYMDFrZ3RURzBUQ1F6L3RIdlR5Z3Rp
+cGpPMXhpZEF0cVduMnpDckpWUENMNks0dEx4VkhTUGoyeURPelU5a2ExMGE2UXpNaFJDd29qWDFERE5BSnVzNzh0RnZWZC8zZUZSdWYzeWY0MGFRWmZUV1NDMU1iUk1KRFArMGU5UEtDbDcyR0ZxdGJrK0gwMXFm
+TmdnaURBY3huZ2hrT1g2SzN3Q095TVdLK3Vrc1NUSE9YLzZ4SUwvM1l0OVFjQmNyZFVmck1sZDl5SWZvUm9YSHRHUEJ1K0JsOU5aSUxVeHRFd2tNLzdSNzA4b0tyZTh6aTk2TjkxN3BNUXQvR0pFWkQwU2ZNUy9B
+U0xuZHVqZ0lIWGVucTR2eUhlakE3bEw1M2wvRU9QRDNMYVdodDFwWHJoaW1VVEhGeDVIcmwrTisxcnpVNm9yUytSRzNxQXZqSHhoQ01pOUpIOVR1VHpaMVhndXlHVjVHWjFBT2RHNVdtMG9uSjZueXp0d2RQdzZu
+ZStscXA0UjkxRXhoaTMzaWZMczRQNXBTcjZLV29SSExnWUdXUytBN21ZYUFYbGIvaWdTVEtvWG51WXdQOVU1NktBZUZ1MVZLY20vWDVCTnRzN1dXUExuSEplK1ptVmlGNXpSYjZGRnUwamdKRjY3NnFVNEp4V1JR
+ekoxUnhTZGg1TUVOUFpWQmZpSm1FbkN6ekx3MEszdVZnSVV2UFFkbng2U2FYUkdkYnRLam5EWkk4bVA2bWg0SmxUZXhVL1JLU0lFRTQ1eVVUUWZXS0xJUjFocTloMjBYcnZxcFRnbkZaRkRNblZIRkoySG5HZUVn
+aGR1d0UzRXQ3K0pGVEsrQSs0TjNDK3RWREt2Q3B5ZmRyZTJPcHFqRWI3WmRrcS81OVhMZU5UVWlQcXdzcjJmbVJsbGtxSFlIMHVEREdSZng4UmV1K3FsT0NjVmtVTXlkVWNVblllUjF1czlONWdpL2Yrd3h3Rm80
+aDVGWllVam1rdUhYd0oveXhpbW5aWnByelFCNlZDcEJHbTAxTmswOXJCcSsrQnBvZGxBdURMVVgwNEdhNDZNT0JhcVJGNjc2cVU0SnhXUlF6SjFSeFNkaDVyVy9CaW92QkRiNDRZcGhVU2FUM2ZpRUFkcUJNTEFo
+aitrWlIxbHZLMkJycDBMcnU4QkY2Q3pVSHlyRzJ2SXRLS3VOK2N2cVBkK2hmSFlHSlBvaDNyMFhydnFwVGduRlpGRE1uVkhGSjJIbStqSWdBQzFUeS9HZmNXSFhSN2hibnZMMWNxRkMwZjJSa2c0UUVsU2hFR1NM
+MjZYd3RjOG1DT3pYajVER0tZUktDcHpDckNjV2p3UlBNNnBoRC9tbFFyc0R2Z0FiTFdRNWZmMkRKMEhuRzk5T2VoQ1BtK0hSS2VBa2Uya29xaUhkd0toZlhrazVWZGhRaU5Scmp1RVRuZTU3Yjd6c1JBcURSS1o5
+TkQ2UFF2RHo4Sm1WajM1QThHL3hpcCtDMTFtSDhCZzEyRXN3NTl3NGdSeU1FQU1YTm0xSTg3U0tlYXFtaDY1cVRDN0h0aGNYd0lHdjRmQnAxaGx1TklQbXRnRnRqSVB1YzB5TkNwZDlPdUpFejlibjZwR3RXQUlL
+ZEhYbm45aWZYSDBRZGZvQXIxS3U0SllXRERPUlRXcklpYVJTcDdrN0lBSmJqRG96OFQ1cTBvcUt4eDNaQ1BPcmNYUXQ3STJ1NnFqK2IxL3BhcWVFZmRSTVlZdDk0bnk3T0QrYU9UbGREakpOQ0lRWFVZVHJnL2FK
+VHM1dVJIS0U2RkpqZFk4SzZObWhMVjBpODRJZVBzcXdkSU1MRlVwNFhCVnZ2QlVvc1d0bXBtMGdHTXV2WXhVdyt3L29WOThVYjQ0MkdYZ2hNQm9JN1VnaStnbVR2Zk5DTlQ3MHBVMFFiNnJNQkdQc1NkM3NDTUl3
+M3kxNGRHVXpBaDJYVlExY0JXMXJhSzRWaFhBYmYrQnZzMUptSjI5RlRLQS9JMmw5clRReVBIZGhvOXA2L2pFQUh6ZXRJNGRVU1FhTVEwL1VsaldtM3pMdXFUVGhNWUFoZVdTQ2dMaE5MaXdsR2UvV2VDMGlHcFJL
+OEdnTmsydzZlVVFSK2lVK3lkcWRrRTlOYXd2bC8yUEZIdWNUTkRvOGQyR2oybnIrTVFBZk42MGpoMVJJQjBzOWRJOFN6WkttOEtLa3BycGJRZUZvR1Nsb29KbE1mTnQ5Wk5LbVFnL25zbVlESmxZak41NkV5cWs3
+M3ZKRzJmdXcrVWNNWGZ0bGxzT3ozR0I2Z2dDdlVxN2dsaFlNTTVGTmFzaUpwRk5HMGZKWmhXOG5UdFBWVHNjUmJ5R1g4VmNHY1U4eUtwWHlFSzd0WFRva09OeUhNRnV0VHZwcXFIZzJiSS9VQzhJelkzOU85ck12
+RFo0eWtmTWN2Y2dlQUs5U3J1Q1dGZ3d6a1UxcXlJbWtVRFJPUWVlZW9YMHVVRVZJMmg5c2VRZVp2ZVNyTkhqWlFQZTJmVEg3dmVhZ1ljYVIwZEczNXRKQXR4MmxXZ0pVMTgxd25kcGtUNUJYTWNvdjFMYTFMV0Zs
+amNDeTlQNm1BY2JmbXpNQjJUUUpUYWMzTm9yekx6eGpES014VCtKR3YvNStoNVJralFIY012aFBWY3hBaDdBaEZuVFBna28yVGdkek5xSUpmbGwvZ0NZaEx2NUI3bzlUZ0RWRGJZeUlUV1dOd0xMMC9xWUJ4dCti
+TXdIWk5Bb0M4bVVETVpYbEVBcDdaQlBBZkF1Wk84d0h2ZkRlOWtnTUYrWGsvT3hya0ozRGpGRTNjQUxEYW5Gdkl0dXFvc1FoNXQzdzA0UWRyRnpGNWY2WDVSbTFaWTNBc3ZUK3BnSEczNXN6QWRrMENMa0ZYbDNQ
+bXQxMndtUjlFRTZKU2YvUHNJVTNGNDJ4QjYwTDlKMjV1ZWZ4ekdnT0UxSS8ySWhGTVhVa2YyTUI3TW5KbkpPaHBFWmFvVklpTmxFa0RVbGxqY0N5OVA2bUFjYmZtek1CMlRRS2RLa1d4SmNuLzQ3cFpKWFpoOCtS
+VVdWUGVvNitHeWY0ZDNQalBPdngxMDVzZGNwaUNXelAwTGNOem1TQXc4L3JpWTJjaTlwVDlkTldQMklQMXdBZzZXV053TEwwL3FZQnh0K2JNd0haTkF1aG9SNGdoUG9HMWFHMER6YkpTYm5FMTZpREJIOVZxa1dQ
+WnNsdnJHVFBxdzMrbFlEblFqRTZXME1mWng5SmwyRDNrYmlmQWpWSmpLVk9hV3Q3akpQYXhrYy9FT1N6QmhOWE92T3ZLQ3FHdUhDaWtrZ09LaG94NEw5all0MGd3RmdPSThnS0YzRDcxMDdWZ0xRcWdlUWRYNmxw
+SllPTmV0UytqdlBLVjNNR0sxTDN4OTZxb0U0UjQ2b0FPZUJQbEM3R1J6OFE1TE1HRTFjNjg2OG9Lb2E0aHcrZlBQS3dOYUJEMW42bzNYZ281Nm9GS2czdm92Uy9KdUlXZHgvUXBPaWxtT3lzU245b2tqOXhaWXFi
+NHczNkF5ajBNbndkTDNUR0RiOXdrdy9Qd3NaSFB4RGtzd1lUVnpyenJ5Z3Focmtrc2dxV0Rpb0xyckRSMnk2UUVvZ1M4RGRyRndhcUtIcDFyaHNIQnplQnNKRmdOcmNIcVl2Tmt0dFFrR1VENjE3VGxZakdaUFUy
+Y3lMbnRtc2tYaWp1eGtjL0VPU3pCaE5YT3ZPdktDcUd1YUlQOGhnUFhtUlJReFUrZGE2V2RvYjN2ZkNCRllKN0tubEdkMW9kU1BFQnFveC9tL0lzbUdKNHhVbTdVZnZsL2EwK2hXaFpFc253RTVuU0Y4SGtaRUxH
+Uno4UTVMTUdFMWM2ODY4b0tvYTZ4aGQvM2MyVnNEUEQySVJtZE5OWkp1YVp0cFE1eTFPWHBhbTRPZXlGKzd0aklSN0F0ZmYrT21xekdJWFNmeWdQaEtlWmkweFpaaGN3UXlMdGh4QW9Wc1pIUHhEa3N3WVRWenJ6
+cnlncWhycHpEeDVCVmZoeFJoRHcwMHVVeTRCdlVQeE5ldlNyRGhHUndHR3BDQWFGbUk1aVVpd25pbVBUcTRZQ1BDMEVQZEJybzdmeEZ3aHRhMGtoVDBLV0t2ZWNXNC9QUE50Y2xqMGV0MTRWbWN5QTMvZjYxaTJX
+c2VPS1Y0Yk1TZ2VkMWdWRjJNUnBnSTZ5enREM2hqeUpyMCt0OHdEaFhQdDdVUGhoNjF5S1dlNStzRGFFSTNwbWl0YlZ0MEpzVlJJTys4KzhtLy94UDM2NjBZSG0weVBEQVhmMExLaGV6M0VuZ3hsQU1nT1AxZGNG
+YnhtZVhFdmhSSlpaT3IwYjBXVHIxdlFRSnAyK0Q3TkJyQ0VrSW9vZ2Z2VGZCQjhIUUhESk1oTEdnelRmbDdZZE1EblVHV1dXYi9EelBSS0MrWjdlcVZ6K2h5QmNwS0llSWNsM25TTnNIYU9JV3Boako5bzRQUXdJ
+OCtyVUJOM1NneVBaMVpiazNYSmlXdzZYSXM5clhVZzgxOURaU0lRZlV5M1BLNVhXdUxHNG9qYklxanEvcnduczUyZjZTOXZzMnNIbXRNOVpheXZSdDFvS3VTUmV1RnRiUVF5N3hIdGV0cFRZRGl1U3R4WmQyeWtp
+YzRmc0p5VUx6RFJ1T2p1eU1EQml2VURzM2pxT0FVVGx5ZXd6NDJ4VVNOTkRmbzlvUmUySGdVOG04d3ZuYWNMOWJBU2oxRlNXQUUwbUk3Y3pISzBhbGxiY3VHc2ozcGZEdWxtMVRGUlY0THZISVV4bzBTUXZLOU05
+RVlWM29kVWtDbERHVTN4b0FYMVVIemIrYncvc1UxeGhOdXU5NVFDbCtqeUMxelhVTGRsYTE4UGNnbnBXbzNJczV5bUplY1BUOGMrUVRFRFB5RFZIbW45eDV5d2dWRHRpQTNtdS95N0JtWU1yMWtkellyTHdwNVk3
+VnpMZ0dPSTlJc1BCNlBUNTFWdmFrT29NS0NYOHp6SXpSNnpUQTFkSWFsME0xeTN4NDhIQjZoeThJU2R2VTBnaldWbE5rc3ZkMlZKa2hxeHEwczFmc3hQYXdraytET29pV05FTU9TTVdvc0VCeHpaYlpsUEFhb21P
+VWYyMHR1ZVJ2VHBNYjFGTklXMHhkTEt5NFZCajFPcmVtamxDNmIvbTVvRm9mNlJBNFdmUWNoYmE1YUF4WUJwWnUvU2VCMkVZeWsyTm5MT2xZc3Z5MHQ1QVRYNTU1cVlaZ1lRZVoxTUkweUVzTTRRa2xBWWdkNjZo
+RnJucDE3SE1wRFU4NlRLTjlwNXBoM2dMSDJiQThEdWhXWmltcWtPUHNsbDlEUGlONncyVWNMeXIwQ2Z6RFRVcy80eGlhQk5Va3ZsOThmSUxVZlYzQzZzMmxrb2lBU21mV3ptWFRhaEx3K3d5amtXMjd0MmxjVVdR
+TXNrZFBIV1J3Yk1sZ2tFYXp4QmtORElud0xZRXRQYStZUVJhbmY1eC83QTFTYjBabWo5UmNISkhGR1k2dnFBNk1leFNTMlZiZkhlaEpvTnlUUjJ2UnJJZ0lldldTd1MzRGsxd2Z5ZkVxUHZZcTd2YWNFZTdZS2I2
+TFRQMmFqdURkQVNZQWpIUFlwSjVIT1BSUUs0UnpkaVhsazhJUVpuRzM0RSsxTTcvUFZ0VmJpRTBSaVV4TkdCUFliNHJSR2QrY1VSSS9pU0UrK0sxQkJ2eTgvZklvWmxCR0kwT3c3MlJJMjhwQjUzVUdsd2x0blls
+YkdoemtCQXc5ZVVRVlZOb0FDL2prZWt2Nm1BYytJVUhraG95R1JSMzVOa0o0MjZNQU1qdU0xMEtoYmVxMkVRQ3Fod3ZnT0lwTkU3YVJ2T2ZaUmdzamdueU9HTEwyMjhJOEd2Vms3WTFqSVRSWng2YjQ2VDlRekdY
+WE13bU93VnZLdFpXOUsrRlVNc2FxUFNkUXlXWERRT3o0OTNNYnkxZ3pUdm5RenhYWEZwQUJVNkZFS2hqQjFTSzBweVdPZk5kaUp4UmRqVnNQeWN4WWJGdHpaak5ZVXh3aWcxVERzZFg2N1VJK2pwRmNMbWJPaWhz
+dk01NEJ4SklTdHdWRUQrVUJIVG9nKzNqTjdtaDBSblBYcDB0Z0VuaFFQYzdhTGZ5OC9mSW9abEJHSTBPdzcyUkkyOHJoelJIV2VpdGFGeTd0TWY3U3o5WUFNbWZLTGtxcmoxeFlJUFV6L1RTUUowSGtob3lHUlIz
+NU5rSjQyNk1BTWp2OE42eU5BV0k3WUNQUy9VV0ZwKzBSSk5EYlh4SC9LR3VpaXdtWk5rSDJNdjg5WGMvK3lXYWpuWjJzRTB5ZEczUGZIWERRY0JDQ0FYNGRZSGhrU0J4eDJrRG50aUtCY3VEYm5LbzdoVXQ3WG9o
+UkNMbkpBa1RicUdSSzlOZ1dZVERpalJJSFJVQ1RwT2NKVGFSNTFnMTBKb0RWUVFiaDhSYXJucytiWFVYcnhoSGRBVnVEY0ZxRzdGeWlkZVlsTEoxa1Zrc0w4WTRwM1JDQWNlS1huNnBoNmJETnZiRFlqc29IbGw2
+VHVaNFlIaTBlQWE2QXlGaE8zWjE2d3pWVThsNnhMR2J3L2tyK1hGME9JZFlBT3J6K3I2K1BIZlFmT29IOFBZSjdNRTBjYWU4VTJrajFhc3RLVzR4KzZya0c4TGc2bXNLVi95RlNqUDdPTzRndm1Bdkc4bFlFekht
+dmFGYndvOGwxMFUzTU1aeWpLZ0NNYTB6aDM1NG5ZcDM0M1UxWndrVHg4VThXWFdYL2NId20rN3ZKdkFHUWd0ZHZxaWhqMHJCMUs5eDBacU56ejNrd1VBcFo3ZUJrMnI3S013QjFQdmk1S08rNVpIMnRFcEN1MG5Q
+dTVWa0FwR2NCMHVjbFd1S3p6bTVOVHpDWUxpUXpKVVhNVlNxdG5nQVhrMFFIbjk5V2ZkQlV4SXRoOXBPMjVOS3B6ZHFUUEZ1N3R0Sy9yVDFjanZqS3JRUHAwbkdaOU5xOXo5UXBFQ0ZLMTlrUUlwZGhGV1lidFFl
+RDg1dVZCYSt2UHROa0xEOVZPTVNOSkUzMlFCZnl4cllzcFJZNFhncTZraFowc1MyVkhid1BYWExKQ3lHdklicFVkOWxGTDJtMzNPcjU5Smo1UkgwTmRhYnNxY1lnZ01kSlNkQU1TUTBBUUZhUlhWby82SEFDUE5N
+UDBHODBYTnA1QTlBUUlYMEFIcldMNHNOaEllS0t1V1Z2Sll3U3hSeXZjT1VseE9rbCtQbG8xMThLQkxTc1J0bFFTY3pOQ2c3UTd4TDBpclkva3ZWMldzdmlOSmp0TGNFcXV1RjZaUVZDRVhJbzBpK2NnQkFDdUJT
+YklRcmZOR0dHQjNucHJHWktvdldLeUluVXc0WFFndkNubUVJY1VHSi90UDdKR2Y2STBmaXZVYnR4UThXa3Avc0JTdFEwQmQ0RkRFckZZVE4vRE54NC96TVV3bVZZVTBOQ21LR056Wlp2OHorL1g3OUdNZm5CejBk
+NDI1ZkVZdzZuVWhjVVlCcmZoVnhLbHdWTWRrazhpZ2RMTWxUQmdZVGNTaUZ1QTJFWlo1VHE3ay9JVWk4ZjNBOVZPTWlpL1ZNbGFkSnI3Q1k5RHYvRE9nUk9VYkFDSHlSaHVEZWRRUmZMNWt3d3BQeVNjQ3ZLYjlX
+bzZseUVWOHBpaEJIaGl3bFZXOS80dGpyTk90UGVIU3hqNzJsa1pWTTUxVWo4c0lUbkhnVTdkL2tFV05VbHVqZkF3NW41S0l2eXB0TVZKMzd6TDlVRWFDR3RsRWY5QmhJQVB2K0txTzRFVGFqbjJ6TlYxUXhiN28y
+SFA3NkR1U2RUSGFwR0V3M3FOUmJlRExZcmVkNGlHN1lzMkQvaUdYaEdvc1ZBd3BHdlh1MmFSVEFJQis5UkdjNnorUTdwNTNTeklBeVA1RTc3d0hLdzUrQmUyemY5S0pTU095Wkl0RlJFaFdMN1RBMS9vakVZQ0RM
+T0xLU29PUTlpVS90b296VVErTTZWMDJ0MStCbEVHbkhmTWpsZTFlRXpDalVlVTR1V3JNTFZDZ2VMb2Y3clJTNXFwb1RMSzNWa25jOTM0SC9wWTI1ZzZlMFp4Tmp0YzVTREI1MW1oYlFRQkp3Uk9HSGpOWUFtWjB6
+T2huOHBsNHU3MVN6YkgxUmtMR213M01zejRaYjkweHBDYVRmQmpHMlBZUUxoVXhocWRreFZpdHJGWW1SU3lGUlp5bU5CdHUwUmFIRWlEMDlZL0NmL0s4UDdGTmNZVGJydmVVQXBmbzhndGMwWENiU0owZUgzbU1V
+KzVwN0RpTDIwaGYyLzltQzJuQmtrZkNxcDNxY01pYkZDWjdVbWdLU3Q3a1JjVGhFa2hQb1VpWkE1OVQzMktYem5aNktSTUZOQ0xCeGpIekpPbDlBZzBqZVEwYUQwWFNFdC92ZVIyRy8xRU1OSU5JWUdxVWRETkFJ
+OHFaVFVMeTNQUGxEcjNpZERLbE81cUtQNUtVNDlWR3dMb2RDVUNwS08yK0xMQnNIRk5lbHdsVm4vcUt6WnlUMnZ4TW5SSWhQSkNzZjNSbzlvSTA3TE5hUWFScm9Ec0thTWdqcXU0Y2I1Q1ZlNm1ub1YwaWpBWEYr
+WklsaTYwWlZ4K1RQdmRvY1NtRXljT2tTVWY5QklJQzJzT3ZOZzFaSm1HRzFIa2hmd0pDNi9DWWtlV0lISUlnTXcwajlaUDl6bDF2NTRYR1cvZ2FXcGRtRy9JNDdWZFB6eFBSb1RTMkpkVzVOK0xPSGNZY2hheFRt
+am5vaUFSbHlaK3VMdnhpZkY1UFRnTDJYUGpGWTdiOC9SQzVkVHZQUjVKQkszb0lYTmQ2TFlsb29lbHRhMURLdFRxK0w1VEg0U1NscHZjUGw0RkNOQ1NKSXl6Ujg4cThzRUVnYkpJU3l5aHNSTEVJKzRjR3RuOEcx
+ZEtWWkl0aWhXdjFWWjdCdXlKb3lXb1R5QVJPSkQzZE4vTVFGTFYyK29jejMxOWRJaFpqRzI4ZmdYOUJmamNyYUJPYU5JUXIydjEwSnk4K0FwMDBuRCt4VFhHRTI2NzNsQUtYNlBJTFhOVFBMdGtxSk9ueVJPT2NQ
+ZG5LU200akFMcks2NEMrSWlqQ0cxSFArL3dBZnVuMFR4RzZRMDNFV3RTNlZ2NnZ5c21EYzRPZWRFV3RZVnVBczg1eFFOcTNLZmN5SjVxOEw2aHRkMktCNzYyRSs0TjUxQkY4dm1URENrL0pKd0s4cHZqMm5QUU1t
+T09aSjB1NU5WQVkrbmd4SnBNMmRSd2VRd21zeXFoVTI1dUtTQnpPMmtrVEQ2VWJGZENNVEhTQXZJTG1IRmxyNU1DTVJpWVdlUGpGdjZjcEFScVlTM3d4Ym84WElUYXBPc1NTdXRndDBCZE4ybjBUK1NyZkQ3UWFX
+bmJ1VHpLb3JvUzBNNmVLbEd2NDFNZFFyb3RuQXgwdTNWWE85S2ZOK2V4d3RqQ0pxUlNvMFNmRFlOdm5ndW9tWXhjdU5sMWlYNzVzaG1hOVFJYk4zOVZ6MlluMnF5aHZVR1lJalFEMU1EeWpjMk15NW5JTGZCWGto
+a3dNbWdqblVvSm9hWFZYR0RFWjljYmEvMGF3UnhJaFBIYlJ2TGNBQUNzS2szcTM3TzZ4MVlWSnNHMHN3VjBuSDcrWEVRUGJQeGxja2o0eWhUQXBCTGdDd0ZyZS9pNTdWc0U5SlcvVnVncEdhUXNJenJmSDAwdjlT
+cncycXlBNEQvY284azExSFZxcXpueGppbi9BbFIwbDhVMEpKV2Nlbmx6d01MUzFoUTRjOUtqVmd1WkJ6dFZOa0dzWkpaQlhIQ1BzRXhSc0FIYkdNZHhNY1dyRVErdlZ4c29DVWV3UmhydHNTUnlVREk1OEQ3cnVB
+SFIwQ2x1M1hLSmZpNHVxaFpuTVk3ZndHUjBFMlpwQm1Wb1BGV095TktrSlRpbHBOU1RhYldQUm5mNmlmZERFR3B5SE4xbkl1YzVoVWQ2OFR4TGFMdTZpUTdrT3dJdmRXTFp3eTh4S0lhdXdyVm1XSHRpRndJbG40
+Z2VIVEFQa25qNzlDMDVZVmhaemNSMERoR21Gc0x3R2xnYXBRQjc4VHdiU0cvem5scmJxdEV3M3BUeUxTeWhLTk1PMDkwa0oza0VtNHEybVpqcGh4bk1UT3VOV1VoR1AxdDBQeW9rK0UxZW9PZzVjU1ZnYjhicW12
+NjV5aENJelRCUHl5TVJRbWhQY3lEV083YjU0bXlrUk1pamRrcnJWREF6UFBsQ21MVXpQRzd2bG1qQzU4TmwyN1Z4TVc1M1RNaWpsZi9rV0ZoOC9RMmI1OWVDR21RUU8wTzRMZ1FkUjNxL3ZnSlRXZlBLeFVpMDhx
+TUI1T3BPaldzS1phcjNxeEptTVBxdi9ST2M0Q1NHK0s5SlBPbkNPMHhVa0hFd2gyRVVrbVkvcjc2OHN4WTd5UGhkRFpYdTdVNlo4VFJKZzIyNEt0ZGd6cDlJelp6aE40cy9BWS9ZWndOaW5ySGl0Y1ZZUFFlUDFz
+djRLTDVXdFRhQWh3MFcxTnF2UmVpd2VIa3U2UDRxd1JHVWpTRXh3WjdIdm5mRmUrak5JSmROOUFZcUcvL3RVelF1NVp6dGVpREhnbFRRaCtIdkcxanNaMHJBeW1TWEVtWkJoUk5sYytvOE55UDJSSGRad1VOYkE2
+SGNRcmc0ZEZuWEd3V0FLdDMrSEtjUnVUSEFWUUZCaW1JTEtTYW5naDNHM2ZvaUZtalF0RUc1ZE1rWWNjYTdLbVJSTERFTGRFYjVZTmRzU1RqYnRJZUpKUHB5R0VPZnRGWUlkOU5SdDVFRk9TRXh3WjdIdm5mRmUr
+ak5JSmROOUFZWkNEcTJpSHlEaUdYd200L2dQRWNkUUwzYjFCVFBkaHFXNmpUUmdvWGlOOXFsQUh2eFBCdEliL09lV3R1cTBURGtmekJFUnc3WUlnYURWUzl5SnBwZDBnRDg0Um14c0N5WkgwOWdsczdVQWNrdkt6
+aStKTm55dE1qM084bzgrdEN6Z3A2cFRrdVhVT21XU1NFU0pQMTJUMUZKV1kzZC8zd2lNdWRENU0reldDeUFzb0Z0OHlBMjZUd3BmNzY1VTllWTVDcVZ3M3h6VDQ4WnFLVmNpUTdLZDVSZ0FWVDdud3pKOXJZTzBN
+K3lJWml3eU5MQTJYMVprbzVjcDBIZDVuWXF6d1doOGQ5T213OStiaXVwd29ZSDBhNHpIYmI0UWQrcjdUelF5TzFvUEQ1bkV5akcrR1JXdll5SUxJa3k0WSszcUJIYXYyLzBBaUp1am40OTl2Z3R1VDZ1U1RZQlc4
+RCtNWS85UkU5bm5XOUphd2ZLRnNib3Y1dUNpM3BTMEVwcmJXNkJtVmk0L0FJUmVnelUvR09XZkQ5T2l2LzFTZFpHWE5sMVFDTnJSZHFZMmI3M1hOYkVTb2tHRWZmQ2pNVXcvc1UxeGhOdXU5NVFDbCtqeUMxelU2
+M1JPbDJ3elZ3Y1JYSW9ONWwzNUFzR0RtWFI3Rnh1QUE2UjZmRk92RyswcDRNSi9zaVdjdmpDYXdtSWRUcTZ2OGRSUEYxdzFjem11eTVrVHNFNlZoaXd5TkxBMlgxWmtvNWNwMEhkNW5ZbnBPVGQ3Ung2UW5hZzdL
+VUZBTUFzN0lubHM0by9IQVJEejV2ekdnNHBFRjFkQm9jMDBCQzkxU1kvTDlFMG5zWXQ0S2Q3WkM4aW1KbCtlcGloRExlSzh0ekdVWDBHaDUzWWFJRUJhaXhyY2xnYi8ybmJjbVh1MWRQNFJvZDVvaHlCRjY0MVFU
+emZqZDIyTmRGbE0wK2FseGkwY0h6aHU4LzhlQndXVStiRUtaWWZ4VmJNU3pSVE1VVUVDN3ZTVVZVT0ZyWHNtRVVwc0N2ajl4WHhhZjd4cGhLS1U4WWphSVlTYUNZZkkwcVRzRDcwbFJEeGVWeHhQNlZNT2RTZVVP
+ZEhRMldabFUvdm1mek5JZTFkcVpETUZRSVM2Y1RWeGRLMW5oTHZkZzVURnhhdjFSQUhGM3RadWxvWXlrSjg3VEVPZ1Y4S3FZUTYyYzVJSS9reWxpTzBzcndCQmp1TXpaaUJ4MWJjWUx5MFVxZ20zTkk4ZVhnTXFy
+L0xoQVMzYWM3TWl4TnRuK0ZNdldxazB0Ui9vdHNZRy9URUpjdzFVRlFONUFFenhUQzV6OERhUDl1R29zR242dEpHQ0JDbUNteVowaVVuV3ZTRXNLdlBCVVZHcjBUZHRGSXdPblRhenZFUDlBcWg0TWNBUnhZK0Ex
+S2x1QUgzdnZQM1ZqQzQya25nYnBHQzZFV3ZCUGFQN2RqSmVRUzk5eUtBTWFxcHl5bVh5ZUw3ZE5Cak95TzZ3QStKcXI3RW5aQmgrTW5EbXhHTDRrVWR6NUcwTS8zNFFaU1JTVnVQWmFuRWhxcWVNaGlNbUR2ZTVp
+N1g0bmpRZkQyMEczRnNDZmJrdGtRSTBGcFBkS2hja2J1ZHd2Qng2bG8wK3Z4Q2s5cUdUa21ObUtXWWcwZGtyL1hJWHNWT05WMGFkMzlVRkc4bzBIS0ZmR01IL2pvUVNZM0RLVzVRM1gxanBLWE5IYjZQNEJ1SHRI
+VU02QnpOcVUrTk5YaGFXNjRXWTZwVHNvb2w5Q2dpYTI2YTBxMHVNNHRlam12aldWNkUwUGNLeERvSkdEYzZJd1hVbHJ4bVo3MmhSMitrNEZYVGZOVGhiK2dLL0NscjRpakgwbnQ0ZW9kRkg0TE5ISEFYOGc4RHZk
+VGtMZDZ6cWNoc2ZEY1lrZnd2cXdWYzR5RjZPNElFeVdDUTlKSk90OWdBc3RuT3pwNm4rd0JkYWNEaEFkc0xXTm14ckpjUm95QXlDb1RubGhwMUxnSCtQNkxDWXJBQlR4S2t0VVRTZlEyQUFLZVA3LzdxWVFXeHNq
+WHArWnIyV0RBN3cvYnZTM28ySGF0Q1JRRytkcW5YMytIUFlYM1FkZEJIQ210SzJGRUFrSHVDOEJrN1NCWExoTDU1bnE2THJDWWsxa0RueE9VUlFITG9peUE3ZUNrRmZzNTJ1ZC94WjlSeHgvNmJET2REd0FIa1Ra
+Q0NPdVdRTWNtNGsrMFc0RmlHR05waHJpUXkxRDRnM3RMRWZkSDZGdnRHRjk2Uzl5MHY3c3NuN2toM3l5L0VHZ3VpcUQrcTRFZGJjbE5LUVozYWd0K2JNOTNsZmJkQWRKbURyeTNybEh1b1JxcGZPYVFJQ2E5dFVH
+R3UrYlNtR2Y5akpWQm1xbU80UTRmU0RHWlRaUkowMGxWYStsUmJrOTNCbjVGTXM0S3FUNEh3bGJkU0tXTGUvRGxtVU9nMHNHTGNIMThmQktDS2RFeThFd0tKTlFvUStmVW5XL09IQkxjak5ZVU1FNENMdS96RUY1
+enVzeENpeVh1VVBQcHBhUGtXT1paeExGQVhxQXd1d3hGZ090WGduTGFVYlNteTVhVmFVNEVvL0FOT1B3dldidS83QUxNeVdlU2RSc0tPZGF5Sm8vMXJUZnJHVXFpalFvNmNMVU9LWGc2T1RHSXEwa1ZJS2JXM0lU
+dFBuVlJrSk9uZTJPWnh2aERsa2ZxeFlXbjhtYlNPblpVQllEMXIxVmUzcEZIWk9adGpyOFNDa2E1VVVaMTlueDl2NDV1K1BmcmhLSEZORDRkbG83UUhld0kwR3hIZG83NGRwUGVvVFpDS0dtengvYzg2aVBRUjNR
+ODArUGJpU3RLK29LQUhGcGZnTjRwL2RaYUhDMjMzOE8vb25VNGowSnd3TW1FWE9zTEludjJ1U2FjR0VNZktzK2Q4Mk9HOTJHQlNkN3AzZEpqeXZmbkxxcjJ5MGIyK3dpYzF5VjFobFZlUTFuaTR3NjdGYWVKSXVH
+YUNWdThhaUh2VVN6U3BjR1ZCdFJ5ZXNDTldoaThOUkVzMEtCdjJCeURoY1h4Q0hIQ0Irb0t4RkJyWmJqaGhjUW9yQVpWcExrV3NBb0R3T1BOcmxrMHpweEhvWmxLQ3pWNGo4cXlmY09YamJvcFpVUW5BeGk4aGhU
+dEQ1eU5za2t1cHgxVzlSV2dJL1daWldRaWRMLzQxdVpXMms2N3N3SXlGL2ZzT2xDMUs0dXVsZ0pFUkZMdnFSTlIyeU84NFcvTUdUWkU4RTZnZGFIZ0x2ZTliUTgvVXBEeDQvMHF3aThIYnpWN0QxR3E5SEZzVzIv
+Y0NVRzhzZDhiYU1xZXcvUk9EY3J6Qk9UdHprdmJaZlhUczBwR05UdllhM3JZZ0pwOExROHZicURaN1I4RGF6MEx1NFc5UzFXdXZ0T1NhRFRtaVd5S1VUWmdQZGtDSWJOYmQxaS9XSzNCU2xmNC9rekhLUlM4M1ov
+UmVLV3dRMGdPd0pXemxNb2R6TDBvbzk3dE1za0Exbm1HNWtRaG03S0NqK3JHK1JodjgzSEFlSlNvRkFKaGN2QSt5QUFIWVMyMnhTeUNrVmJzVG9iVGVqckVmNHgrZVpYQ0hnUU96V2ZKakdwM3NuRWY3NWlZSkcv
+YnNTNTA2SHBRYnh5TWRsU2o1UjJpdjZJTm5VZ2JtVys0ZzlGTy96cU1qbUxpdEFjLzlNU1NZTSsySUd0ZEVRYmg4R051MGxEKy9qY2pGSUhpMmNHSk45NmgvTXZuQjBIU1ZHNnpJRFBNWUtzNUZ6RmxLMGlkWElG
+WkZwaGExQ3FPY3FBVUxvWTVMYll1T1F3WFhockhWbXpDWHlJZWRuQXlQemJFUFVjQ1l6NXFsQUh2eFBCdEliL09lV3R1cTBURFZGbHBJY0UxelJXeENadG9XcHpheXV4dW1uS3FHcDh2Tjkyb29LWjI2NnFnV2xp
+Nk8rS0NVUFB4cWZsY3Z2NDN1L3pYWUVYamxBUjE5Z3lpaDNhWUhqOWZJdm1OaElmN0FxdDg5QXFXVk1Fd1JTR1BxUlR6dnpkTU9HOXVYdUllb2dHTXh0NlBOaW9kWUdHQ0UxaXZLZWJvNDdiaTNhK05iK0dISVNI
+NTBvRWZEOWFkcUJSVW1mNDcyWmhmWUNDaHRhczBlVFZrUFR6OWQ0bE41a0c5RE5jMm9aUVY1U0VNMGlZd1NtSFh4em1FN3FONUI4WWgvTmlXK0t4Qm9lM2lBd3djQXZ5bmlsM2FwVHF5VmJMeStxQS9Qdk1NRVRB
+bXk0OFBBK0FMNnpjOWhWMjkxS25hbmpFdTQxV3RXUHVFRlVPcEpjbFUyUytMMlIrUmdlWnFzcmUzNFk2SlZDTTljOFlzRmdmV1diNm40TkRaY2JGYmNMZ1lMWmlUck9UMnh4NHpzTDZZWTlsL3U4RGlmS21iR3ZF
+eFNFUE1Hdk15M1dHTkxTMys2TVRsTUpKdWlqbDBrZkllMGZPcUZOMXMyOHVGM09yWHhoTzdZZWwyQVJqOG1BaHA4eDFTWHM3WGNwYnBCOFpnVWJhakVtYVQxQzNheXlZZkgyWHIyUEtkVStoT0dVL3h4TjBVVGNy
+ODBLV2NHUjVobU5EZVdJQnAvZm1mNHBvWGRsbjA5OEtncFJwd1pUa2lqMGV3cnpPYW4vQ3FmdzBiQzFHcjRoTnhYMjRUbkxHMjR5QWUzRUl2bFhLOE83K2pVbnV2dWwxdS9HaHhQNFlJUDFEdnBYWDBvRDUvejdy
+STd6Nnh6Z3RZclVBWVF0SVgzbHZqMVVQOWsyd3NMTHc0YnNjRWVhV1Z6TFh0T0dNTzFGRHVkcjNJYXZvOXpuRjlsbXNRaDZrK3BDRC9RbFkxazA5SFJ2TFRFb2NFbkp3TW43a08wT0F1V3pHQ2s4STdXT2MyMSs4
+N29maExaaU5FZUl3Mit2UEdvcVlOMjQycVdVdVlic2JueXFyK3RpU1liUHJPWHcxaXkyRWYrVEl1T0hQdXlKaUNjblg4NzgyMUR1a0JUUWErR3FGbXFrVThjM1dRUDk0R3FKaWJBY3JGWkE4U1crWld5N3JqTjFP
+b0k3dXdaVjBzdUtYUDdqTk1ta0QxdGM5VTBERUNza1p1NzM4WGdXQmxoaUJSdUN1NlJzb1Z5cXZBc1E1ZzkvaTRVVEpsSnhGMDVERFFqdHVCZE9vS1YwL0lwcXlYNVg1VTlYdDN5dHRwSm5FeDl0Y2J3S1hKaldo
+MDNJMWlTR1NISnA1ckhla3hMdXJWMHRkdFV5Ykp2YjBnT3JLZm1EbzJ0SHQyczJJT0U1aFl3NEJKTGJKMEFsSXlyMThMSEZpTkVKR2piNGhtWm9XMEVBU2NFVGhoNHpXQUptZE16cDEyTjRjQTZQY2tQRzEzQ2hK
+WFhSSk81dk90MDBaQXJySzkrL2FxWEh4N3RjeGZrOWJxaWdlZVFQNU94OHVka3RQakNDcmhGNVJsNFNVK1pmUVlIU1p6bXhFcVlDMmNQSjFlVlB2R2hNZ2FCaFEyZXB5T3VKL1I5R3hoQ1pUSWZTbmJSdVVOZEtr
+QnVBWnJzc0l5L21kc3hJZndKTzdsMU04SWN6cXFhZ29oMGE4eDlJTUtDOTEzV3dJeWErNWtQYnd1LzRwTnBqejBQNm1weDkrZzNoQzhSc0hIR3hjQlRiVGsvRjBURWtYOWk5NEs5aml3OHl3MkhZYWhVSmtuQmRw
+ejAzbEorOGdnUWQrTHh3N1pVaVhnRzNIcUM2UnJabTAzOFJxZE9rQWl4VWR5ZnJvaVcvOURnK2c4aG1nNGdMVmVJcnowQkpQUlc2RUczdlV5TW44QzdoWlYxd1hOdmpEOE9wQUVHTTlwSGlFVWlpandkUHRDS1FQ
+UlJhN3pRR2JqYjhBOURwa2R4WHVpMFZmKzBTd244ZFQzNkwwNWRlK2lpWDd2SmE5dlJ4dS9LT3BZeUVrRW1UY082eGZHWkVBS1ZuS3RVeEdjWjNHVWZ5QjdnRFo2b0U4cGlKOWQ2N0JBWGtYbWFqd2xYb2tlQkph
+QzY5QkI5MGxWQ1JZNWM3NDZmUHNCMmN1eHB4Y1dVQ0s0WUhrb3pXS3RxN0pHYjlBbTZtbnVIWDVvV2ZXcUplY1czcHlFaG1TaEI1U0NNTktSZWRxWUorck5QYmVGKzRVQjQ2ZVJoRGNaeTZXbml4WkNYZHpZQ0JU
+NTFvdVIzcTFwRnkvM09HL3l6VzN3VS9nQTBRTWF0SDdjcG16TnZqNXp1MkRINmdXbEZCQnZrK1J5c2lnTHlHNkV0UXd0UDVvejBrZ09ZTzMxcnU3cGpSdFllZ2trUHdWQTYwVnpYNzFWVW5ucmRHbTNGRm9MRWVL
+YUVpTWFMZjRhWGFBQlJGb2JDbmV3bExMU3dmV3YzQWx2Sm9POFU2VlJ6NnZrWG5PSzRkNC9ESFR5cmVDbFpjUWdkelc3YmNBQ1NSTW5nU0xCb1JBUTlYSmxVL21hQ3pKdk14ZXdNQlF3RFJoUjRqSGpXQlJaOWFv
+bDV4YmVuSVNHWktFSGxJSXdaK0JadTYvRjhYSXFEb2NpNFZMRTM2NW5jekdqelRjZmlnM0FkbEJ2RlhiRCt4VFhHRTI2NzNsQUtYNlBJTFhONTZtNCsvbkR1VDNNMUhCa0hNRStWZnhKTmhKRDBYK3dVZGxHNkZJ
+eGtWdC93dUNoc2IrQVhNcU5hY01MMTdTeTU2bTQrL25EdVQzTTFIQmtITUUrVlJWc3dJdjZ4a0pEL3pRcmZ1cEwvNHAyVWFsTmZrNzk0SlVhZ3Z1WW1BMEFFWmNwaGQ4NmNSZmtQK3Fra2NucXNaY3RDdER1L0NC
+UHdmWWtwWFB5UEtKdGNUdU90R0g0SjBWTGZNNDZpc0dwVlFnaGNmcVpjZzVZd2FqYXQxTUVrakFpc3ZsRlVvNEdLem1yWThqV1hDZUpoOHR3VHFQTm90UTFOVzRXUEh5TXF0YjBjWS84eFliZmpEZmUyRGc5WWNQ
+N0ZOY1lUYnJ2ZVVBcGZvOGd0YzJzWXZxTEJYRjdJc0c0WEd2Mjh6cjRRamRqQ2dGU0dyK0o3cVdWZE52aGs0WHU2TEVoTHZ4bnd2OVhUY3NrZDVNRFR1US9iS2VOWXpYM0VRTVJjNXAvYnhFNnNwYWxHbm9UVlNW
+eVZiNVkyOTlBMUpRRXI2TGZCRFNDcU50bkhQaWRhRWlhcUNpRVV3ZjZSaFE4Zk05bk1FY2YyeVVLTHpBT1hMaHZqeXN3cDdQQ1dTcWg0dHJQQ0NVY1ZGWjFxU1ArclVXMzFkcG9HUFdmMy9MN2FwUGNtNTkydXZk
+cjdqbWpOQ1lWMENVc1l0VmRES0oweEZ1c3VDQmR5ci93ejRKNGQybjl3WWIwc0hWWjQ2bTA5QWY0M1JleDh2TGM0bWUxcStYVnhEUmJOazkxRWl6N2c0M2ZKVUdJVmw2eHBIMHFJN2RXcmNQU0YrODBSNEQxTUFj
+dnlFc000UWtsQVlnZDY2aEZybnAxN0l2eDZyVDZuWDZJejlUZzdZQ1BqaHRoMXZLQnU4ZWpSckc4UUFvZ1g5QlY0TVg4dk5EZDRSa1VqaHhYQ3U1ZVV1TFFBejNMekxDa3VvSXk5VFI1Y2hnNGdnaEZ6dFpzQVdV
+Q0o5cUpWM1JhTFJZMXkwYnNDVHMyTnNCTHVlN1RtNW9DNHlUVXkxRDhhaWduSGpNd29vbnBTN2V4dDlpdEhtNWJyK2ZsN1o0TktJcUFWeXJsRHhMUmNBY3NHMlhFOGV2WUlUT1IvWUhZTnBZaVJpTExTQWFrNHJU
+RmFDaHhCV1JicjUwUEdBVmxCN294YXJmbXVlS3l0VHh4V2tHSVUvVUR5Wllrc1VzWHN1WmtxRzlVRWF4MVdmTGYvK2JMMER0WDMrcHVOZXN1RGk1dThWUnBZamsvNE5NakRHTHFocXZhY1NuMlhQTzZnKzE5Nzhk
+Q25kNGdDdjM3dEZpWWw2bGx2cmVjZHNvbzM4K3BGTXMvL05XeG9MMmFQZlk3NS94bHNFakdNd0RUQ0dJL2krcUxPZXIreTA5U3F0S1dpNldyWlMxdlljMTZzRkU2VVllUzQxRWg1VU5TS012Q0taQXYxU2tyY0ph
+Z0pVUG1HNkYwMk9sWG1XM2trcFQyczl0czIxNjVXR1RHdEVvejBCTjJJaVZnY0JMUmdYaC9kS0NHSUtYTWlxMU9uT3JKdHgvSnh5bmRKVGhlUklPTk9FQitVNFVOWklzaCszakRjdjBma2ZCTXM0N1dkbVE1bEpa
+RjB5ZWFxVTg5SkhJV29hL2Q3NXE5aERlOVU4Y0pZRWI4LzM1cFcvMFJTcVUrbklwSDloWEhPSjBDUXM1ZnJYT2JkdGlrcTNuSElySE0wVVFDNHBFeVJmRytCK1JCZXpEVkt6TkRnZVBpRzY0amRjTW5Pc1d1NklQ
+QitVTlhjVVB3VGIxWFcvdjZqT2ZpQUFlYVFtUnpZbzdtRE1EMXg0ZmV1YlZPYzR6cno4QkZnVytzVnVQeWxpL3oxamFLS3NsMnpxTTREQjRLOGZHUktneDJiSTV0UkUvOStGSzZlekdiWVZMLzgxcm4vbGhFQjVo
+emd3cStxMTZnblc3SWt4YjdUeHIyUlBlempiTm54aEVnSEFvOWplaWFWdXJ1VFEzenFwQXdtV3Q4WUlvWWltQXFlVDkxOFZCaVhWb21uSmUxWnNGbEh4ZmhlaXNjbGl0bmxBZGsxWVRwc2hsYzhneUpYSGJ3TStU
+cWZPR2QxT1JzUDFoY21GdTFEWGRZUkFrR1FXMnhqSTZxKzRTa3RCVnZxQjlWRlkwcUs3aDB2Skk2Z1BwSHlVV3ZVUlNQOWUzV0s2OHlaK1Y2bU5lTVdOeGdlUnFUR1RSY2p5a05Ec1RmSDVvcStseGUrYlZCNXlB
+NDlPeC9QYUZENGlLaEhIY3JEK3dCWmFzZ2ZvbDhjSFZOZVl4Vm1BUklidjBjVVJwWWxTd2lQdC9zU1lYRVdyaFhPM01IVXo4NUY5L0R4dnkyTmJQK1U5VmcwbVBIaisyQ001S1lKdHJOY0VURUxkbFk5Si9hY2Nw
+cktxWXFCN2ltNFpHYi9FUU9BUnFKek9BM3RuNGx0d2pwK0N2OUk0NWVwSmRaVEtNbEhvbEhNQkJkRFpwYTdnS0pkQkViM2pJVW1pRXc0VGF5LzZpR1plUzE3bm1DSWxqd096dEQ0MHJTZWViMFpxMkdIdjdIT2N4
+bWZWZDYrcTVCL3R2NjIzZE84S0w5Zy9VbElwL3dUWVJoNHlDNklzRWw1WlRrR0JvY3gydFV5WUtQbXNSdkxtZzgrdHJFakFuODlEakxQSVpvR04rR0UxQU56ZFV0MTY1Vi9nN3BuUnRJbzdoR1l2MzdnUUtHQ1V0
+WWlKcHA2UFBWbFM2cjJuRXA5bHp6dW9QdGZlL0hRcDNlbVZaUVp6Ly9rdzZOQjRGN3VzZFN1Y29OaVZ2UnQyNUJSbzJWTzBkWFNTV2x2NXljNTZwOHRXQzVHYWRoSFlEb1F0ejRaSjcwdTJ6cVZyM2FlWnl1ZERx
+STlrSWpQdmFZYkpPV0VyRUxEdm4xQ0pYMjc2dXhzZ1VUYnVxb2xMTmxESy90Rkp2K21wZ0NYMU1IZ2dzZ1dRTzl3cmZ3RWlBOG9BWG9Kd2RSelRzVGlreGgxL0FiUlllTnc3ZFJ6cUlPZnU2QXRHQ0FMc2c5K1Yx
+OFZBYk9qa1BvNVJHcEkyUTdSNE1WK2VHS1g5d1luUS9YYys2N1IyTmFPa09Ra2lzbXpmMHhQZFFyY2VqWkZyZjc5L0hjOVRrbFFZVmlhL0dqZkJlVjVMZzlkTUc5a2VyTUJnRDhZOHpjV2VJVXVaOFFHTWd5RG84
+ZU84RTJUYVFZNTJwdHp6a2xRWVZpYS9HamZCZVY1TGc5ZE1GSVJQcEpSSGpORlRmNEFWcTV3TFpSam1icXJ2bjdvM1M5YTltelpJVHJUM3E0RHQwSFh5UWNBZlR0SGhjM0p1ajJCUnh1aG8wNVFPSG5hYzI2bkw3
+ZFBnRVdZcUE2Wno5TmZuVFRJU240NGNQN0ZOY1lUYnJ2ZVVBcGZvOGd0YzJUWlBsQnAvSmpvVE1xeExRbE9XbEIrTHpacDJCSE80UU1IMDVxVUxQUEdENHVOZS82cTl1Z2d2d1V0RWc3dW1xRVdINVpjLzAvWnZi
+UmxSYVZrcUJ6T05penNNQ05QeitRVVg3QnVDVHNCSmdwSFhhYnQ2UXRJTC8vcUk5SGw0dVFRU1FCTkZnTkNNQTFkNm5EbEhud2svT2JLcWZ2RkduMXlTS1k5WlFvY3JhZFRPb1ZjSDgzTnVmZTJrckhQV3VIN1ox
+TGk4MzkvcGZnN1kyRENqT0drTnFvMk9Ta2NhZ3BIM3p2VUFSUVhnLzlQT21rT2VkYU5uNVRCejVITi9LUXZWczJ3azUzUEhGV3hIT1RENGNCL3VQMStYQnZmSitnUnFuUDA5eXZmclNJQU9WV3h0Um9kVGpqMy94
+Y2I4cE5QdTU0NWpQQWk3OHBidGdyMmdwSEg3Uk8zRHdXOTNjMVRoTnBCeWRRUDMxTnpCWW8wSmNoaGJ1aG40ekY2eG1FLytnMm9Fd2ZOKy96TGF6Yzc0WEpMUkNkZFdFQ1ZjWFlBbkRvalNlR1BxUmovT2E0OWRa
+Ykx5QjloVGppbUZwaXJiNnFUdTZySGhyZVVRQVhjSzIva1o5MExFR2pKeHVlL3lDVzd2MkxnbDBoREJQREhvV3FoRzBKV2J4UWFqbHN4L1Zvck0yTE5uUnFwL09VVzhVSi9aTXJSckdtVjNJRWdGVjhPU2tHOGVp
+Z05mYTVvVmdYM1pYWFpURjRRRmlwclBTYkNnL3c2T3prYytXazNTVjdDbXl4d0NNbFFIY2srUnk2Z1JmQVlTdGhmWWFQbmVyWGVSclRlMHpHMXFlSy81SDVocHFqVVlZREExQTRSaVJ3SDBIejkwS01LU3R3WnNa
+MDhBUU5NbDJWMTBmK1JLbDZFNzZnSWQzWFNOMUpobm8veCsvTTZYRkFCeUZrTExFVG9xZVV1cmN6VmJ5VXpDamUvL2d6UTB2VUJrT08rME52b1A1WXY3T05HTjFBVGNiRC9KQytUZHI5RE1HZk5xNldKeTJTa2N4
+eE9OYnBFWTJZRmttL0JGUUhUVHczZUtoSVVwdEUreHZGblIzaEdteEdMTzlHK3djRGlRRUhqaGwxTGFyRm5OWkUrM2w5WndIdUo4UDZKTG01Y0hsck84N2lodEsyZnhzTld6RXlhN3Zxb01NOEx5Mm8rQ25rMkwy
+Z2VoemJjVlNYSW1GTE1jNXllK3kxZE9QWC83NTlPTG5qeTY1L3dvZjRrS0RldkxKQ0RBWFhwblBURTZERVBpWjgxalV4YUJYZWJvYk1xYkR3SjFlalBXTi9DeXFxYWpuOVZEWThzbXdZeFVsTGZKNHFkbDdBb3Vz
+WGJva05UYWkyblhvSHpHT01LUEhicStQZWhLVGl3a0xHS2FpYitrdnY1MThaUlVRVEVkbVNWbHIwQ2ZycEtHcnJpZjZzaHA4N1ZrK0VkckgrQjVzR2tSdGJ1QU5vZWFnWVFieFVha29tSXAxOEsxMVJPRlEra050
+MWkrLzV0V1hCeFp1dURpbWQyVjhhUWwxNWN5akxTV3psLy91WllHbmxYRVpEdTJBZElRdXBKaGRTWjkxUVI0WDBKZzVoOG14YncxMktycXl5bGlacWMwWEt3K1RtMFlPcVRqTTBPaWs4NUVSVGVSOXFyTGMvRE1Q
+V2dQcUVmNzdZRXNrb1NkQ3JlSkNSVjNRaUpLNFhTc3BRUXh4QTVZYWJJbkt2NjVwT3pZWTFPM0pKakt0WmhlYTRhcVVObFlaTkF4dWU1azhaYkErdm5BMEtZanRiZDdPMkhzNWpsdTB3Q3FRcVBSTWVHcGV0b0tZ
+MDhPc2I0NzNlTmNSRWk5WXVaZFhXK3IxN1diemNaZTRpSUlEUlIxdGgwWjRxUS9yQXgxWE92TkVRN0RnWndNclNySHVLSktWbmd6Zmx0M3RJSHVXZXFZbGVaVkdab0NZZFdGK05sK05kSlo4RWFSMExXdHNvNzJj
+bHd3dFNyQjBNSXZaRnFjU2luQ3JFMXlNdTVpZFp5b0k4dHgrR1U2YmExQyswRlNoQ2ZBWVV0SGRFazhrRXd6aUNDRVhPMW13QlpRSW4yb2xYZEZvSStUVTJXME5oMDU4YUxLU3I3bzdhZDRpU2ZFUUplaDY1RTZh
+czU0aXZiN3BkRWVuNU8xeHRQVDdpbytnejBMOE1wazBITyt4SDZ2Sm5FVXpWWXdrR3lDaEtaR2tUMjBtRldpK1ZCbXc1NURDN3dXRTcvcTQ0dDZOUFFsRmpHeW1LQjRPSlJvL1RCaE1BaFBUODJUNlpOZWUxQnFH
+TGg5eFZXeHJENUdpTWRKaUlJWG8zRFIvMWE4VGxXNHhYWmtQRnpmU3RmemU2Y2Z5SmlFem5TU2xiaWZLMmZCc1FCNmMrSTdTK1lHQlFvMUdLRlZSaTc4WG9JWGk5emtZSEVEREFMQ3FWZW5WeklkUDd6THYwcTQ2
+YXc3a1JEeVp4TVRwTkRucE5ETXRkZmJJUzB5cXpMamtDV0lub2YxclppOTVJMEhqczZSRmh5a3dGODM0UnB4WGNiZGZ4bE02OFNueDR4U2ovcTdOVy83SVMweXF6TGprQ1dJbm9mMXJaaTk0d2VOaDNuSEhYK2lL
+bFd6cTFFYlN1TUNLeStVVlNqZ1lyT2F0anlOWmNKNXBaQ0RRejhBS2g3TFlsK3ZlMk5saTlSYTl5aGNzV2d4Q1oxaTNNQlloVEtxVlBGc0tLbXBQR3Vzd1ROWjY1VG1KbXN4d3pOK3ZGWFFSeHFESGxzUkIwUWJN
+dkNQRGZkTVlZamR1L0lCcHFrelh3eDVTSnNKOXBLQjNlTUJPWjI5K3BjVll5RmdzalhxMjlNd2tFQ3N5cWVraDdVdlphalViUmdPMHpRRDBCWTI3T0R0bEJuY0h5cW03dWZOY283ajU4QTdLdEppSXRPY3l0eG5Z
+ajFDWGtFSG9tQ1p3N1U0VWRBeGJUcjhSNnFtNmtvdmpGMzRYTFFqZmtkK0Q4aU5Gb3lOdStnYW9NWlpCdUFlbDk0bWs4VGZhYkFWM3pPTU5meUNnNXVFM3N2S1dTQUZ5UHlQNmVtbEg1Qi9jbEprK28zbXR1eHlV
+SnlDclJONDJ1UFFkWTF3QlZ4bWM3R1Z4azlkbk1kQlR4ZzhEZlFyeXhwbTNnR2lXREVkQklUdGE4OGpJbFBBRUR1dlNRb09sRmJ6L2JrVlJ4b050ZTQ2UVI1ZTZFOVNyM1RJSWVhVFlsZHh1cjUrdG9MV0cwWmFE
+d3RpQUxuWmdLTitUbXo4aVlSZStqS3d4TTllbERVei93OTVVSzVJY0JkUmJUK0d4bFJ0RG81Uk1vU1BMWXhQcXcwVFhPZHJ5bzZNeEMyMjBaOTVlK3dOdTZQbHNuSlhsei9yeEJ2Qmd0THRjcy9zWGdodmgyWlhQ
+elV3VXFNNS9HUXJaZlErcUUreVQzQTNxN3hkUGpmY1JMZjhFVm5PejQ5aWxFUXJVVzdRdE9JdWF3RUp0bmlXdnk2bmxxVzJxbitya21paVFIbXQvQ3NPRUdxOExOSEc0V2N3bzVQSWRIYmQ3dmVXcTRjeGtkMnh1
+ZEhVbitxZ0Q1aERINnBNM21jQ29Pd2hqQXA0bThLbXFoRnpNY2djSFZ1T0N6QnJmMnlQb2FvTitrVkxmZFlVWWJ5K3JmS0FndnozNnpFWjF3ZVh4V2lreEhNSXcwN282enVEVGI1NlhSYnU4YkxvS2Rsc0JsUVFP
+Q1dCc0c5NlJEVis5dTVaSm9QUlhsTFZ6QkQweTY0NVhXeXZ1NlY1cjdVeTVoSHlIWFJYOW1jTmg5ZDJ6QUhReFl1SDNpWkFkRlplU1ZGT2hMclRLWk0xQjFyT3JDRnZUWGtnYjJLR05Ga3J2RVdINUtmcW1HWkRy
+aWIyeFpJVXJxZEVlSVQydDQ1aWRJUklZOXAvTStKOFViZWIybGFHcThMRkNjQ0hBWTFpcnVGRVltZlhvVmxucEF6MUN0NVVGbm9XcURjbTJrT3drRkduNkIrbmthVnJBMzNFSE1TdFdBM0djQ2xKcGNxbGk5VEpr
+R3FFejVjc3A1UWxwZE9XbUUxVldlSXMxamJ1RHovWkJ3OWZMQU1RSVg3Yk9tUXhLWUNKUDN3bGVDWWhVdjFEaTFoejJTQ1JmNnVNYU9WVFYwWmoxTzVsY0ZRM3ZScy8zbElUbUV4cEhmR21FWCt4ejQvSzBQcjRD
+NDk0djA2Mktra2dDbGIvS2FPajVtaXpLeGg4SHpPUXhUVjhzNUdmeXI5WVB5WU9tZHhHQytIL3kzUjRMZlAyK2RWd1JsM09NdllNTFowY3c4Q1JhUzd6aDJlTjJYdXl1a2IrdlU1Zm1sMXY4YmZtRUpteHBCalhv
+M3gyVUs4aFB0WTVqWWUxdVdELzJCdTJnOEJkMHpJMWZOeER5NDRVejdHTys1Nm9NMmdHdHZJeEpBekFwb1htbUxGUXBpcmRQQ3U4Y09BdmwzenZJMk91VmlTT0J6K3F5Z3hEeTQ0VXo3R08rNTZvTTJnR3R2STRv
+aVUyVGFMSHpwYzYvZVpqYmk2QURUVG5yMndwVG4vQzVpYzgzWldhZnVNTUlSdWw0SXFuWVVmcjIyUEtVVExkYTNZTHNaeHFmN0tBQ3daVU5MMUFoam9mWW1yS3R6NVpJWjRxUUFYSXFURHBHa2I0RDdONUw4eHJt
+Vk9pZmpPcUYwRkpWSXdWdHE1dm1XZ29iTHA2U3p4NFdsVE9Pcyt5Y1lPbWNCZjA1dllvMWxPQy9PV2VkWURFVmgyOE5NSjgwQzNPbnQ4aUx5TmlmSFRGZEtJMDNUdTJ5c0JoWk85QWIvVHRVRVVBQkpXTWxnTUxT
+d29IRldmcGRSSjBPQWxFb1NJZ3kxNndaZDFkTllaeS84Q1p0OU9laWN5alFMUEZuLytJcWFMRlFGUHIvN2tWTGlZZTdXS1ZJNU5MSHpONXp5SGlTR1RoeTRta3U2S0t5RUZzTjlPZWljeWpRTFBGbi8rSXFhTEZR
+RnZQTkRrdTFubkd3a1Urbm9JbDZHQnlKSXljbUZGelFWUDI0ejVnMEVYNExpVnZYSjcyNHUyN2MvM1g4bVcrOW1YTzByWStlYS9mTjRZMnVJMDhZN25DQzIzUWRzeU8xdnFnZkVsbDd4SVUrekdKK2J2S3JHMXNU
+cUxzZE9WYW5LamM1SU54Mm54SUxyR1FSWWwrbGw1SGRwUVBUVi9uZ2Z2U3JHc3JWa2RBYnVzYmx2ak5WRlEyNzZsOUxiQ094V3l2QUVHTzR6Tm1JSEhWdHhndkxSU25FdmJLK3ZIRmpNbVhRSlRPelU3M1BJWHBP
+ZDZKN3hyMTBUTkFrbjgzVUxDSXNnYXhqVzhGa2cvdzZRa0lPMG5wZlduSUpLbkc0Mys0eEc5NkdxUG1wSWpEVkdIbTdka3dEd2lUbGFGZFdVZk04YTNCL2VTZEtHa1JMbVd6U05xZWJkNDBGWk9kS1llWkVkMVRW
+SHE2cU5VUDhZWTM1bHRiQkZsMXBhdFN2ZENqOTVJeVJYSmNkaGEwVDB3aGIwTGxoeGhKc2NjMW8ycUtCNGQ3VEVDdllLUWM4VVJkU1dabUZGRU9oU1Zla1l2YnNIMUpWdlNoYlBIWndOd2p0QVR0UDN4UG5xV0xM
+VmNJQ0dVNTcyQTd6NmRZUGNORng5WmJQTnQzbjVTWGhDeDNRakgyWm83TGZzOU9RTjBadG9QVWI2bWI3OExoVHhNZEs5Q0tPY2FkbEYvRW0yZmhlaytmWkVTc1NoZDFhdVdyQjYzeDR5ay9ydFBQNjlwYXJYbk4w
+MDgrQWJVVk9NNW1pa3k2cTZoSC9GWDhUYlR1NVpoWnNzSEFMU2lZMEpLUG9nQmw1VlYxaXVmakxLNCthTkVjK2lZVXdNcnVKVnlLbVdZMm93MUM5RmhiYW5RTmFiTEd3MkpSNkwySVRMMlZyNHp1TTBwZm0vamk2
+NGxyWlV0TmE4NGh3NlV0S1JsaXUrNTEvU0RiaVNKeWxzU1FJT0tJcU9LVUtlUDNrakFOMXBOeWlwMkhkZHRUUDVDc1B3YlpaZUk0cDJNMWdiaWFhcFBXbEVjdy90OEtoQWVpeUJVQmhlWG5sUFZ4UlU0TzdnNTRX
+YlhzS3dBS2twRXFwZVdmWUlqQzllNVo4WC9wMmpTQ2VsT0hhWUlsaTkwVmp5WUEyT1dWd3NkQ1FqNE8yRURxempab1N2dzlwdkVuYnY1ekc2UTY3eWdYT2U3WG9wS1BZblZnNTdWemFuU2lsMG5OOHlDRmxuNUoz
+ekNQWWY2c3NxTUczZEVEZkpRRUhiWGNVcHJUaE54bDMwTHlVL1ZxQXFXZkt6NDloUEdVclI0RDUybFZ5TWM4bjFWc3NtOHJqMUNVTGp1MCtvWVpOUng1V2NzYm1lc0Z6QTg3Y09hVjlkOTlQMXhTbDVHWTZjd1ow
+RHRRR3prQ2RJeXRNaDhjWkVzZmorMmNFVmZHOG9xQXFSazZqREFaZjBHNlBYRTc1WGNWN1NvN2ZIcTh0Qm1Ld0hHVFVPeDAyc2VOMSs4SXNNckpoNHRnWDd0R0JmczB0V1VoQkV4RFRMT2xYaEVYVTBwWVlVcDJm
+Z1M1b3Z5SWtZVHM3VWRFcXp2Y3BvajIydUYrVU8vQUhFRWhSWDk4Q084WUtDbi96bk5xWTJ4blBxd1JKV2MyejQxcHlWdkx6WERtS2Ryd3lLVGV3K3N0WFBWK1Yxb3V3YXlMd1hqTjcrdDNuSGlGVENUT29UUGJV
+ZWQxOFdQTHlmb2dneGk4dlVwdkZHQXNOc014OGo4OW8xMjZCM2NrWTJBU05wM2ZPZ256UGZQWCtQRUVZRUZydFkzMGtjc0ZSMk1UN3BycjZkK0tBc09YajlGY3VpTjZwcGFpY0p2OVlLTzV3MjBHTHZhKy9PYVZo
+aWJzTzNuM2xuNTJRbThrUENrVmdhRitGZkV1bW51MnhuRVNUaitlUVFWT3dMdng0dG1sdE5MelZNcmVYQi9lbkJ4V1ZQK0tIdXNMQnpIeU90TEZ6YTdCTCsvdEh6SXMvaWVMRG1tSlA0THVhRm5FNVJhTkVsVGQ3
+OUJTaU82YkRmdWMxR2dpMTA4dlNmaDRCamNlUFl3OGhmR2wzOFRaOEF0S3Q4Z3FPTmJjWVlvZU44dkUvQ0IzUmc0NFprcjgyUVNMU3kzbWtIZ0FkNzZrSEsvMjcrY3c4Wk9GbnNsQzZiZlBOdExqMFMvOExZV2Jk
+SFQraVdhZXFET09wZlhqdVE0NVc2S0FBQjl1KzE4aWRqeVA1dExLQ0Y0cmNvckFYS3NhdVhDSkFlMXhwK3h5TUx3Vkp4ZmUwaHB5SS9ram1YZGdCMk1reVNEWG5kd0E5R1lMcFM5NU56MHFBUndVVFkrYXJaVlhW
+Y3BVVFJqY2FralJ3TXgzanF0Z0x1SGRoY2NCOXJhdDg1SHVJaEhtYnZJZnlXTlZCaVBrSUVlK1Y2U2dRNlQ5eVJHSFVMb243RmFHK2wvVThPWFJBVHFxTi9jTy9saEp4OFdkMEFSd1pDNERvR3dsZXBwMEFpK245
+M0dmdVVJSHlsRlc2ZjNpbWNQeEh3cVRTVS9kWC9aaGthMzExWityUWl5Y0h2VGhIZXVJbmJBbndDdERWSVI0NDREMU1nRnZncG9CQ3FHeE96dDY4RzBUb0RZczZDTHRRY1VWekhFUU56REdEa1I1NXQzMGZLKy9j
+U25RZjJTMDVFWjM4UGRVbFA2VWpDYkpLMUZRclRBejQrQnhzZVpXanNUc0N0QUdmY3NXckUxYTRMUm8xR2lHWldVdE51T0hxbE5QQUl0ekkxNHl2NXp4RytWNnMwRjM0eFQvR1RQaVhmdC9LeHdYWWdYYytqLzVF
+NCszUk1mZUpkajZrMGx1NFJNcGFXL0VWZnp2TjliUU0xMUcxN1FUN1BEbGF1L2tOdHZsSlkzSHZIUGNkb29yaUpRU1hCK1NPSXo4YXhxTXdYN0dLbExXQzIvNFBlZVU4UGpTZ1d4MkZXR1hIbVdac050ZWNqUCtv
+Rk5Hb1doU2V5SlVoUzFoWkkwMytDSm5pMFFwS0Vma2Rua0lTNzNkUGdhaGZNc0dnNWNJNGUzZE5Zd0h3d3hFZ0IxbHVmN1BWSG44a2VqL2ZtejRZVDN1Qm42aFRqZGxSaXhEU01QdS81cHo4M3FDbnUvUVVwRWJY
+MVRpY200RjMwaWNVZVVoUUxuYUEzU3o1UVdlb2VzcGxWeXVmU2diNDIwaTBqRS9lazBRMjg3SHc5NFpJdnI5T1Bac1cwT2xGNUdZbXFTVlh5bDJ4Z0ZJWUkwWGVGdURvbEQ3MWRRNEwwNmx1ZnBQUGpsend4cE55
+dnlUYWs4YmNOU1lRYlg5MTNSVGtXU2YzQWZRK0p2UVJEVWE1d1YrTWJmclVMWStoNWE0MVlFUlVqcml3bjlpaHZqMnBCZy9GbW5HZHJMS044b21uZ1FaSC9xUmFmZ0orL0diUTVaN09FaCtmT0hpUGZGaTJqZW05
+TWpQZDkyd1kxMEM3T003eWhCZ0FlQmNrWDAzWlJtSWNnbEt2eDBGY3lBcG1lbjhBa05TaHY3MXZGSUhPd3BrY00xVXp3MVpmRFJqaVdqR2J5Y21QRWs5UGFMK2gxazlnQWFPVGtLdEZBUVZQbTRncHBoK2ZPSGlQ
+ZkZpMmplbTlNalBkOTIyOHl4NG1JZHNNdGV4c0dIRk1HSkV1MWdsSi9sN3lNTXVJaGk3WDJEMHVLSUtTYTc5Y1F0ZWdtMVROWGtqZzIzUVZuY1IrWFVYQWJrZUVkV0Fzd0FxNHFNcG5vSDQvYThsVFFXOUpONVIy
+RE85QzgwZTBEL0xKVWlDQlZzcmYxTzdMRDYzMDFtcVczUVVrOFZIT29UNTN1akhjSEd1bHVrT2REcC9DKy93T3hlWUdiaFNTN1FTeEZsK0hDd0tVZFV5eEpHZWhTOEk5aHllWHBEbXFGK3d5d0VTN1JiUWdJa01K
+Skc1ZzBEVkV0a01UZFQxb0ErUE9PeWdTZGZMYmdwNThRUTc4dTY3QytpQmd5VGFzUFhKcEtkNXVSdFZaaWdYM3ZmdXZ3K1A5Sk5hWFJ6d1R6MGtTVS9kcTZKZmR2Zi93b0lPalM5WndPQ21qdFdKWWNrZDJsTWlp
+MHAyOTM0SHlWRG8rcGw1NnJtbyt1MmFQNHVOdGVMNzNtMDJ3V1ZJNElTejU5bitqUTdra0dZZDFyUDhHbzlndGFXZnkwMmFpSEJoZFZtcjlsY0VXR3VnZmZyZlFQUUEzY0lHVit5bktWZ2RjK3ZYSXhicTJiMmd4
+bTdQaU55bFdGZDI1ZnB1R09TUlRBemlLNWIwRm0vdTF1YzVHNW91RWJrNDhWdXBONFZCMHU2OVZSV0hUS0M4TlJYcUZDUUFxU2hxN1kvK0lDeDkzUE0zWWhQYXMweDJaZDVBbXNsMjdvTExXSm40SCswVGpVNW02
+U0hIekRXMWxjUEpxcTRZeW5tK01Oc1B6aytzM2p0amVQS1BPdmJ2YWFxNUZXbXcwV0hsTkk5Kzdua0E3L2JXS2IycUQ3aDhXemF2SVVzMnNSbGJVRnZ1aXN5alRTK1MvQlVCeXVPczN3TG5aZXVRQlhibU90aERo
+YzVucFBrck56TXBWMlhNQnI4cGVkRXgzT0JhcEMrV2J1d0VuTmF0S2orR1R4Q0p0UFB4TnRSY3FxQmRDMHlMcDZHZVROVU8rMks5TmRmeTgzQm5zOGx5cktOZHdwdVpkSEFPUjhkMmJwdG1od2NqeGVYTHEzcWpN
+VWtPODYwRElZUVlaU0pJNzBWR0ozOURxTURraUZRc1JQR3piZ1lOQ1U4dU53UzZkbm9DZEdRZXFMY0pDdjBWMlhvZG9xK0Y2WmcrY2xCK0tIUDluUnh1am1pT1VDdHlNUUpUSTJvQXk4R296ai9rNnJGVkxiMVgv
+UmFuZ0RGSnZYc1RWSk1tYkJVSWhPV1lURTVjQTh3TWU3Z2ZiUlVvV2tvRzAyUXJpRmMrK1FUeWVMcHdKRnpESFUyU2dpNExtQ2VteUpmb1hXb3Bub0JPWHJrdXJONXQ4T1VCNlRlRlFkTHV2VlVWaDB5Z3ZEVVY2
+aE9LanlVcVpLZ3lveHBvbEpCOU01bEJLZHF0dEVwM01BS3pwTjZ3Nk9qb3RmN1BYK2MxYlF1TnhOaCsxSEpYTStTM0FraWJnYlk1Y2oxZGFlT0RpVG96VW5wTmwyWmJNN2w4NTJtZjc3NHh1dWg0TmdmU3RPT2Ex
+bFJqTXczbGthQzZYeitjQXNKdU1LS1NlMGtZVDVYenM3eDZVL3NlOTVjbFFOYmdjUERRMGhtR3FzRE5GWG9mb0p1bGpnZTFXd0hWNklPTVpQVGtMRXhsNGltV1J1cGNWZkZ6UGFFY0FJakdaeUp6NExpSThJWXVh
+WHdRcUdTNmdrLzcrMHlwUUo0NDZ2KzV4RkQyTlgzRjMraVhPWEN5cFQ3S2lWZEg0TWptRHo5Y0txUEN2VUtET2NUTzVZUVBmWGpUeWxJVHpTUW1kSDdOYjlIUDZxL1k3Ly9jU2FxWUVKU2xlN2YxOHo4QXJNKzRQ
+Z2lZQzduZ1dQZXRIWk5qdjZSZFNUaWd2dEZJRXVCVVlTNkRReW5UT0wzWCtqM3A4eU1iZ2lTUFVDczdiUXhSZnFETzF5Z0puVEhyL2dXNXljbmZoV1puT0RGdURTTlpZRDdzTnRmNzltQy9sWWhscGc3RVZYaTNK
+a1VXRmFDV0F6TUpWQk5HeTN2RHNBMnNpRVVOcHkrSHFTaklnOFRXbnpHQUV0N2cyTUxLSUI1ak0zekIzS2NyYXFhUnpxa1N0Rk9SbzRWd3Q0MzUwYkkvZTU2Sm9qWFJJS3MzaGwvbzJBMVBDRWNEdXVLZEV4cjBP
+YUFaUUs1c3JCRzJOUHlZZC9zTzA2TGVQWXVKSjliMTV6MUNLb3ZxWEF5Rkt1SG9KdWhrc2lSWTdsc0U5TmRQeER4K203RVRxVDJmR0V1RGVMdFdkWmVCeFpqZ2RrdWJJNndIOHNMaVNDTy9zZUc4NnhiV01iMmJM
+cDZIZXdNUC82RDNYUHhMRGFQYVBBSkR2a3p2eTBwaGg1L2Y5SWlkWTFkWUN1WG1mSE9zTjE1MzV0Zk1DSGg1SUErM2JoU0t3azBXY2o5V1MvT0JpazVDT3dxUGo5bnlYUnZUUllBelVaR0cxTDVJZktUT3pqUDQ2
+WFkzVmNsSFpiVTh5bWY0NkQ1Tm9VZUNUeXM5Mmd5Z0lsYTUxc1pMTERzbjE5Wm1sVjFEMC9lVXE4UU5IYWk0RDZZUU5aSGoxTjluVHJIVCtvRUVVRXhiUmh2d2d5dDFKMnhVWUFoeklPY2dWM1BvN2xIQTFJcnJr
+eTdQa0w4N1Jpc3BsVUxxaFJ6UWttcXdQaHBPVDNEL2FZNVhlbWxxazVBUllYMXFUSGMyMnBobFBTdWVOTmwrY0YxcjFuR1hXZHFGbExlcVk5NkZqZ0NmOStsZVo1MnRIVjVnazBRNHNFZFp1bmQwUll6M2tYTGFk
+MGNPcWRDYmRKeU9QSU94RlUwaks2amxRLzBIbVpsSDRwREd1STFWMnJPYnV2MjlLZzNrK3ZBbFpuc04rY21EVVNLMzBBRWxLR3NtOCs5eGg3YWkxNTl2ZUVHWXUrbVBvbnpZdUkrc2JNbm1jMzFTVlFmOG1PN3hS
+OFdFV1dtbDZBQVdtKzZHN3hYWUkwZk5SL0ZuUVVrVHM5Znl5RUNrS3R3RXVuZ01vSWhtWVR4bkNxVnFwbmxjSWZJaTN2cUg1M1o0Uk42d1BjSlBDNy95dk1hVTViS2htNW4yQU5WNmFUUHQ5MHlxMUc5Rnc3NGZB
+RFNyNXVSdzJhcWF5VHRJZVhHVDA1NjhlVWFmWnFpTUpKTFl5c3RvZVdoR2dVaVQzeXR6cU90U1pCMkd1Y1YrWlhEd1JpUWJuMlM1Nkd1SmZJWjlVZ2E1ZnZQU2J2RVIyQ0hmRDhqNG55aU02bk1LTEZkaEt2NkZ5
+eHROaFMzcFEvOVoweG9wc0NWUyttS0J3eFU3Q2luM0djZUgvK0ZxdkIramZWYjQ4SmFmVnA2bFJ4eHE5SXFlQjlFd0hhNEJSTUwreWtXRHRSMFlmK2dSVUpBdVhrUWxEUHZQY2U1YTJHQmJRdHMzSkZneXRzWjlt
+bjh6VjQvUEh2U3UzbDhVKzJiZFl5aFVhMm9XWTYyUS9JL3Z5b0Q5aitHOEd4Z3hySmpTT3orRWlkRnJkdWQrVCthRjhwcVRrb3dFc3UxUGYwZFQyeXFoVkp1eGxMUmp0MGlnTTZnMFM0VXEwR2RoZ3BWYndTVWJp
+Ni9ja3ovOHpqYUZENkdjQmN1dVlBNDdhVE1naHJMcGd1R3U5ZGJhRzd4Q0lESm5ONHU3ekVzNTdQOTBFNmZZM2xvOTdiajFCQ0RGNFJsaytzZUIwc0NwYkMvOUxmU243dVdpcFZwQ2lSNWpnMDBaL1AvMTkvZERB
+aXIzaVE0R3Z6UnJ3d2NRKzJkYmFzUW16dnhkY3BIVzF0TnY4T0drSHo0cUhocU01MDArZE5CZkhpQlF1QkQ3ZDN0N1dBa2ZNSnZCN2h3UHVSVXZlOXNFdUViV3dtUHNITEx2eGFhSUtQMzZYWlhWRnkvMFNHdm5N
+MGhhREFqdmMxb0dTdGNHVXFrTW9YTWpXZ0UydmtpTXdDRllnTVExdnRKS2pySmJDdFhWc1pvOTM0V3l6dGdPRzR1eUdZU0duVFBBWE5Vb05HYjczWkwrMUNrS1ZCVnpRZWJoWUMyME9SQzl1TDNTTlNwcHBsa3hx
+ZnVZOGY0cUd4OWFvVjRKUE1xcUZidUE2RzhjRmdIcms2dXZSdVNSM3ZMRGNpZFIvOExjVTBiaC9CVDRtTW1JeWcwWkdRdEZxaG1DZFFXQzdRSkcxUW1td1RsZTE3UGlhVWpyYndZUlJrQkVLdStMVXVwdjZoUHo3
+bTV3SWxjY2tqaWgrRzhOMHVZOVV3TnZSZGp4RnVqbXdzUzNRbjJacTdOTXp4MHpPV0lyZkRGaTh4aHl3TVJyb0I1VDhJemF3MXROYlFOeEh0UG5xbTVMdmJOQ2Ixc1FTN0N6WHdacFBLc1h2MFZYM2JQWGtKeVdQ
+UDFBZmVXZy80YnJCMXloRldkMVk1dndCSzQ1bXZ0bEc0MmF2WC9CT2ZSNjRaNXF0ZW10K1JJelJ2dWVtWmQzWUhyVTBTYjNDT0FvUWl2UjZWN2tiNHFNa2h0N2tvNGdHM0V1WU5DTkVCbDZyRUpNZjF5bExWWi9G
+dTJYeEt3bVdTbDBVM0VaeHh2TzEwRWRET3pzVjBxajJJOU9ycjhvSkFsYTM3WkdOeVNGcmJpcHB0bFk2V0NJb2pmZUlIaXcrRW1OdXl4aDNpN3lTcGwyNVMvWmJnZE03SEhaU2htR3pxZ09LZE9wek1Ja0VlY2Qy
+dkxWZnZMSFI3aWhXaXA3YzRqaHZNNG52b1kwNi9qWEYyVjljWjlkMkgwQnEzbkdKNlZLZ29wRDlPL2h1eVZYb1ZTR3FydEJ0allJN0hjM1doV3Rsb3loQVNvTjFXRndkSmdjZUZrNEZlUGZ4RCs4aUM3ZGtLR3hr
+WVhaYjhnS1I0Ym1DM1NLMVpSenVEdUljbFpOemdlQjdmVEViNTBKV1JBYTFxT2dnczNSMCsyYk9tdHBSb2hNYkRaNjdONmV1L01RdXJPOU5yZHBHSjU2SlZaMk03R1pnVXROS2M3STkyS2ZTQkhkWkNVVlpEMUZy
+K29aKzNBRFU1RXRYSTFwVHBITGF0YmIxNkNwU01BcUM1VmdrWHhaYUxPRTJTUXNCMDdtNWtCSlJ6OVR5TlZRdzZFcEpadG1lb0VzK2NTSmlTTmROZStWbWFjdW84MTk2V0JQV2FIanI3WjFCUGFvUWJ0VENmbkhu
+dGU2OEhRUnZYdjc3MUZzV05FMzNNQXJSbTdzVUFnVWkrTjNDMk5Fcnl2Z3ptT0hINjRLYWFrQU1HbkRrNURLWHQ1N3EvSVNTcVhZQ0pMQkJDN2dRK29INlBaSlV2NmtSNUkwTVRZU3ptclp0QmZMb0U5MGQ2MVE3
+cmkrbjl0UHNDR0JwZklvRTJwdmMxZitnZW5zQTRJYVNEaVp4c1Y2SFVkaU1GQ3JSKzdFWXRtdUxhMEt1eEJuQUtuVHJFT1Z4Mm9leHB0bklWNlVpMDJHYnZpeTFRQURLWTR5anhmMXRnMklYeEZxdGI5MkJZMEMx
+R1hXd0ozcWtzcWlsL0hoRnlXWDFLY1FJV0NQNUZlOGh1TVF6aERvamJQMGtCOVE0RHltUEF5ZTFPa0E5QUdHWXVia2RFK040WXVjUjBxcFdhZ1ZmU0ViVTIyaGVFU05oNkhPQXk4WWF0Sm8yNlA3N05vTnZ6VXho
+dHl4YUg1WURVTzF3bEQ3QWwyZjY5NkZBWmh4YXNDb2lHRitoRS9La2dzQXkwajA4c0NOQ1F4eWRZSmNjc0ZqRFU2aXlrSDNnQi95NkJkWGhLQmN3cHc1S0VBdEU5ZHh3alVvYTZxUDByU1RvYmRjcDlESFYxSHBu
+eHFBTWd5YWZFQW5WYkZOYUxYWkdVMUhpakFJNmd4K2VhWmFoMHo3TVNkQkNtRkx0WHhzNUpLN1VmVHhOZitlRWVFeU5NYXlCSkJRS21YSThIT1c0SXFxTmw3TEFkeER2cUNDOG9Ja0ozdks4WTJWbEFYclE4QVZj
+V2dDQmFuRjBBTUJMSWwwV2g1UlpQRVhGRzhTRjdSWStGTUc0SEhDbjFGbmszRS9xYUJSK3E2RmkyWDhISzhhNGlYNzlGaHZQNmZncENock1Kblh6K1lFWTF0K1JiTU93MGNUUVpraGJyUUowWjB1NlJoSUZxcWh5
+aWZMV050cDdaMUpQM2RGMWc4WDBUN0RkQ2ExRUxzeDFPSGlaZCtXME5yMkgzamRCNWsxVU95UWZjZjNBUjluUUZtZUFQZklyWVlzNWxjcXpvVk4wU2tVUVFmdmFkV1o4Z0JkRm9VSnFZVndCTkdBSmNxQVdzaG1I
+WXc0UnhIOXF0MXZ2NFBPdERwb05US2YzdC9aQVJFeHpXMUNRTzVlREFGTU1iZzNkaUx0dDEwUXhiVzlHVmNreXI0QStqaDdVYk1DV09Tc3lCZWNIdHc3KzFVNFZ3aFR4Y3NlK3FLdVRnVkZnbngwOXVxTEttd00x
+S0xnT0lBUlVXYm9KZTZWZHBjdUtNVms3OHJkYVpPVjlEekF3dG9HRHdTNkNDcFgrbHhtbFVBVEo0aTErSDc3ZENoSmMyWTJXcnZwMzNRWXRzZ28waExwRlNPYlNncWdWcnZrTW5DUlh4Nm0wckVab3JmVWl0YVF3
+REYrSStIcjNNR2Nwc1NFRm5scXlVRGU5aVNBb2RsQmFUdVgwYndOaGpFRkpoQXdzWXllRVd4VnN0dk1wZTV5OVpXb0dFQXpJUVlsR2RLYjRxbkk0bFY3eHdvS1dMbE9yNDM3YjREVG5NbEVHTHNERFpDODlOTmNy
+SUdDMzdPT3lKYzJsNFpSTll6TVdRNmExSnJONHlTQjFnb2hFaExxejJKSkJNNmcwMHhaS04zeEprYjdXR1lOZDRmajFFWnhnM09tWGtoUTltNlp2UmhzSlFpZTZaSXN0OUlTRGlXNkFBM3RrcVhrTDUwdkdkcDBy
+ZHN3c3hHNG5hSnR5bnBhQVF2WnZvMGZiZk1KTFlDMExWVzI0VzBuakxIMUFNSExwQStnYnl6YzJsZmdtSngzN3gvdW9VQi95Wm1aUFltMVFKODliWlIxUFpYWGJmZzBrd3Y2bDBJTXdaNzV3YVRKd09FMUR5RkZq
+ZHY4OXV0YUVrNzZHcWF6MVZsOHIxa0dxdnZVallwM2JoMkw3TklJeGlaTVF6ek9xUkNxajdFeFJvMTZWdkZFWHRxYVVXK2g2NU56Umk2NEFQNU5GS2xoV0dFSDROS1BXZUxHYTBYSlh1Q3VuQ09pVThOVEVYVGhE
+OUliVzQ3dWpFTzlFM1hMYVJOcTh4TWZiNG5iNXBodVBMQXRjTWF2TW1kYUNlQXFmYXk2NzZQb0VGb3V6MHhVS2ExSlFhUmRMVVpnR2dNMGlCWVhQbzJZNC9ER3EwVDZiVVREWncyZHY2UUd0OTRqdkxjZFlMZURT
+R01LY2NoS21DSGVvOENFWW1wa010QjhBWS9aY0RJMU1neHJneGlhUVRHdU5Oc0dRK0taYlprVjh2aG04K1NBVGFxMWZjQURmcmViODhpRmRlb2Y4bTk0dVB1L1V1L3EzMzFPaU4wMWtZb2Z5ZHpQbUxRc25xUmM4
+ZWJPUGJEbVlidnRFVDBZQW93eXRYS3h2MkkxWkEza3FNVFo0cVk0aFZMTCtqYU44T3RndnlTemZxUWRaUURURlpNeFVHODBWbUJsYWg4VkFINUZPWDkrRlhET1hpcFpSclhlZEE1QkI4NnhwdkVyMUM4RUxHWEhU
+cllhRncxTHl0UzI3ZnNOeDJZd2pXM1J0bHduNHE3SlQwZXBMTmw5YlRQcGFnT29Ld3dCK2NkeFNPTVFrRDZ6UjNlOERWdlk0d21iVTlwMG9OQWt4NEQ1SGJESzNKTUZCdTI3VEsxQkdxOUVLQndESnh2OGo3cUVu
+dkpsRjEzenhwUXJYY0FQRmtPWTErTExBZWx2Tmx1d0JyVER0eXZwL2FRRzJPRmFMMlp4ZUlwQzk5Z3l3dU5KNUNRbk5KNmc4R3kxc0s3KzNGa3BsSDJZSEZFUVc0VnlnQlppdEYzelhCT1lUTmgvRi96d0EwMmZ3
+OTI3dUN4Mmo3eWRUTDRHbzhZQWNvcEFGL0JKRWU5cSsyK0I1MndTdDBLVHBWMDJhUGVvbi90RG80c091QisrYjA1YzJsdXFEaEZIenNXbms3RjZQQ1c1amxVK1JoUnNqREd2YWdrK0JDVXBLdlRKNHlPUUxGQjdP
+dG5SN1dzTGlrYjd1OTZyQWEvOFJYM3ozKzVLMXRSSS9saGtmcFRndDBCdXNaRU5QVFp6RmhLS3k4MDBBZ1c1YjlVOG9kV0R2emxaYzg0UkdvR0JuUUpOb1JhZ2dyMU5DNGY3UUZ0MkV6TXVvY3dDdVZJSzdnTHVK
+TU9wanpkVzZWM1hTN1J0TnZtSUo2Q2JER0o5eHRqT0Z0VzhXVmpkSWY4b1RqcTAxYzBpK2c4d0xKbUYzNjNiMWcwbVU1bjAvUU9UUnQrZWk5RnZqNm1DTXNSeFQrNDRzNzZYMkJ3S2NER0orVVp5LzBsY3l3cHY3
+c3E2bkJxVUZZUU01VE82NTcwcThtNGxnbGpUTW9LN01YUTRnbzZKcTNGcE81ZlJ2QTJHTVFVbUVEQ3hqSjRWZ1JtbnBxQThKWUhocU9YYVpKd0hQM2NSUHQ0WnoxcGNhL3BoRXc0Y25sc0dLMjNWTnRHN01BQ1JE
+aVRYbnBDd2tic1FiRlJVc1lEcTVVZms0SVhTUW53b2pUOVZRM0x6UU9iMW1YeVFCdWJsNzJ5SlZYWGc5UGVYd3cwT0ROK2RlaXcyRnQ5ZlB5Vi9UZ1oxNmNEZXFndzFGUk4vYlJUMWwybTZ1Sndoc2ZRUFl4bHJp
+MUhOK09wVFdUb3lMQkJibXlzWERLS1RHelZSV2lGUzZ5bGhxaGd3dHdzZ1VNNTd6RkJkWTM4OHFObUU3NVN5d1NIVG5KRHpwOGdnVDhNYlhVbStyQjdNdDUzVVRqNzUwMlhidUtKYUg1U1I1K3E2dVVJZVZVRk56
+bU80T2hsWmw4VmhwVDU0ajBSZlVlcUVrZGdLYVhMOGwyTjAySnRmZWNyTEVudjBraW9jcnl6SGtJL0QwZEJWSWlydjFzbnJDbVltZS9nd0cwYW42YktYSUVTZ1VmNGVpRkpDckowamVleFRWbTlBMEF5OEo2U3JL
+TVJFWXpmeHBWRkhJTUVOYWdCNGRjL0l0WUk5MU1rdkNRMHY0MFg4ZHZFVDBTVG03a3d5RUhjNXF4eDlyT0tFWmZ3UVV4c3ArWkVXYzBqeHY5a0tQdG9wTk93eklvWEZ2djR4NkJBUXllRW5TYmdnOFo5U1hodkZ3
+M0VjbmpLanJ0Vk9ua0ZaWnJaQjVEYmxZRzM2d2lQeVlqZHNCMWZEamhrbDNFYy9BZjZrb2QyYVhWcmx1NENrZ0M1OVRUVDVGTDl2eUVVVFR2ZnF4RXdBNGdlVS93bzRKRXVtUVMydHBMOHB2d1BZM2Q2ell2L1ds
+TUdtRUZwL0k2bC8wWnhXSEt2empHb3ZBeEdlalhsM0tET0hKMVR0eTJ1TjFHdTlSWGVmSnpwN2NNV0luTkV4ZWFtRWQwSklZWURzWDRXVllQSE0zSDRZbzJWak9oSHd2YVJWdzRhdTNUMTMzSytaRVJXSS84VTli
+YU1sL3hHOVBtaU5SRS96bnpJSDRZenBSb0puRUw2c3BHTzl4YmFCVmV2RmpsTUE5SUN1OERlcVRHYUdCN09pQTZ0b0ttWUs5OXBEOVYxampBeTdLUTQ4VnhMbENqbVdZaWdqd2U3TlhVUmk4amhnZW5lc0krL0NQ
+Nk9DSCt1SmREUGdTYm9Hd29yYUx1M2xVTi9nLzNXZmZ0ZWJBMEtlYlhEaDR4aThvOXgrdW1WN2pRcC94UENpWnVVVm43NnNqZUFCUVpjK3lHdDlkR3ZhTmhpQkVVazZSd2VRVFdrRUJ3SFZ5ZUlBcExKSDZMWUkx
+WUtvWTdHNWpKR2dVM1VOdXIvd1dCOE1yRjVUdUhndjVtblE3TmZDYTRPRzZiMDAxV25TajBONW01a2JVUnl6cEVxVE9kMHhZUEZxNmQvc250aEt3cUI3L0tXb2JzMGExTDRYajNtTk4yMUpaY082RUR6UVpPZzly
+RWdmVU1YaUVtNVM1TXJ5dHZMSndyTXNHd0FyelQwSTR6ZXNqTDVEQ2trRWZKVkZHYTFkeFZFaVpmYWRROWM4c2xIZExvWlFoTnJDamFXWjJUN2RqMXlsVU9WSngzSFp2OHJIdms5dWRWZ2ZkcHlNOE5oQTU2NVlY
+WkZLdzRPdWdjT0ozQVJjTjJkd0MrTFp6a3FudHI2a2xZakRXL25LaDc0anRKblp4bDg2bkNOa1B4TGltdGNiRFlvakczbnVkT3k4bzhNSjBMNEtQMzFhK0ZJbmdMODZJeXExRjBGTnFBUlJ5WCt1RFpxYy91dlU2
+b255eW0vNnlsR0JZU2tOZ294M0dNdXpKTWtmSVo4Mmd0NlFvN1lOb242bUZVeUo1TnI4eEZ2UkVWMk1LRGQ2VHduVlhoNGRhSG9POGdhR1ZwOTcyVmIzSmthaEpKK01LVHN0RnNMd3JiaE10M1RUWjVNRjBFLytM
+NXZMSnhUN0YvVG1rU2ZtYk50WWF6eUFiRityTjVaT1diWXoxRHd3QS80Ui9zM2dGSFRGK1VpNzBMVWVsaGxZMnFTVmozc3ppSXpiTW9DNmJPaFdNOEdwZExZZ0dWUkpmeFRza1BkT1V5UEVocUlJa3NLVnBJc1Ay
+NS9zNnBTcWlxdlFWZWw0WTVORU4vQTRlT1NJanNtakRBcXg2ZGxrUDRHZHozbVdsR1VvK3d5cjRrdDVHbDZ3dVo2QkUweWw4Y2ZEQmVDNlN6d25xcVBSL2U5WCtTb3FkN0MzQ0k0V0RsSnBBRHlxUjluZk9VWXVn
+dmtMQXh6a2F0UlJxL0ZydThBdDA1azlPRzhPMVFIMjRZU2JIQ1l2WHAwTlM3bjdPMW5pWXVrQ3QrR1pCRFVyNkNnaWE5VFRRRENVRDd5NFM0ZDROVjdzWWRFM3JsdzYrQmRxWTlFMGdMUXgyektrTVhkNDRGd25N
+ejgreHlWRGdkYW5obTZJbkg4eFdXSnl6aG1BakNiaFFRV25GZWNYN2FKNFVJM25tYk5xNmN6dzlPSTRTTGliUnROeXp5Z1pTOHFxeDVZdEt1TkRmYnhxK0RlVi9jL3VBSzhGUVcyREtSZTBMQ0RXTkxFT2V0ekYz
+R1dINEx1SHNxVFVSNVphZ0xuM05OcW5NdGVWQ1BBcE9xWXpNMkJTY0Rwb1RJbFBsMGJsSzg3V3M3NzBlYXZjWUtTN3EydjE4cTFDT1pOUGYrdnNyKzZtdFZXN3dZaTFSUUt1YUpCajhqajZFczhzRDhLUURKRjRI
+WWxWT09uWGlkLzJpZnNNZ3BOamg0U0E1RWJvcFVUamR4aGpMZUkxZHYvQm53anpVdEFsM2lXaXZXR29qbmlaZG04KzgybU5hRjlDNVdRSm9jZFh3MzVVRE01bUdYRmxncXpYREhGSEpkTmpmSDBVS0hKaFQwUGNm
+Z2FwbGpNQW01MklVM1dHNHZ5clZGN1VBMm1mWVkxMjhnUVBQWktuak42QmFmZEJ5TkpaSGVaRXFqMGY3dWV4Q0tjbm9nMmtNekorOEFTRmhjK1hGdVlTNnZsdkRGejJFSXJkNTFSeXpxQmM0T0F1a2RFZHdNTE9T
+d25SSy93VVlEeG44dDJkdmtlbTFPMmFoNVdyZ1FSbnAzbW83Q2I3cVROSk10enRpT1AySzdPMDdUb2hNK1ZhSzZmeWpmQmcrNTdxRk9SS3k0SkhIOGdRTVhhdThEdHJaVkVJcHZLVUFLTnZsT2VuT1dnR2xyeDlM
+bTNOZlNsb2dCdnl3T1VidHBFYXhiSmE4aFpKVGs2dnVFQ1JOMGNLMGhZZ2VVNitVRG90K1d3Q3kxa1ZONHd2ZGE1S21XTDhrRUg1TEptNGVFQ2FSQWF0RkNnaHJjVHE2N1JFTzhNYWlqK1Rzcjg5ZklzRHcxVGM1
+MTViT0Nsd251YW1FaU5ZQzFoaDBxL2ZkLzFuV1ozMnpYQUowc2dmNlZ1NjI1OGNqbkt5dHVoODNyb296YktlS3BtMUNQeU9Kc241c0xTaDdiOXJJQ2wxbWIxUjFZVS8yaDNVN1BIbG1ZUW1FcDdyNUQrV0VUb1hV
+eEpwcER4Y3lHcWs5clloamFpWHFvbmQrTXJFUVJ2Zms0TjVoL3hZOElleWIzaUk0MS9GZm5oTXZ4WXFoV0hZTFFsbDJOK0xDSWlTWVdmb1UwTnN1Tk5JMnRTT1lOM09tTzFreUdoRC9SVEUwdWluc0plUmhvR3BQ
+N2xwTzlmaFdHTThpMUpENkVpZU8xTklja3ZRYVl4bkZrUXdGaU9DSnd0dmJNUktTMWZ0cjJHWm9kY1I1RFh1RElRNnJZdjB1TzF5RStodWtma2pNaWtTdjRXNk1MQncyVVppdGZYTDVjRDVmMnJmRHVaSkg3aXF1
+WUswbXZCMlo4S0NYclE0OTR6VXdDKzBEay8wMjVKcG5jMVAxcksxUWwybWJBeERadEhlUGZ3QXpxNm9LaDRKeU0rQnQ0MDQzR3FDY09ZTUl5R1hhSU13c1h4MmFDbVYzTi9CVTZuQlRqWE1sOWUxL3RtWFJXNkpB
+QUsva043YUhGNGtCMHZHRzBMTTl0MEs4dUx3RjBXazFnRjZ6Y1VTS2NFdkRxYkFwMThrSjZCRVpickZqR2FZcjBxTVlaNExoUDBTejNXRGJGQkQ2WGpCWkhCVVp1NW50d3RERzg1Tlp4V2ROZXNqL0JTclZleEM1
+eUVOVVhaaTlLRUhBTjNsenpncmppOGhqSTFiblRHVElsalE1TERGdXVOa2JxbVJFb29LWU96RVRBOHBNYytlajBoMlR2bUpnZm1CNFNXa3k0ZG9IUHVOME5jWDNQaXlER0svUGJWamJJc2ZyVmp2YnlxcjBQOVFN
+SitEU0NCMmY3SitiakswN0Y1SjlaV2w3bVB6M2lWa1FzNFE3ZGthNGVPR0hpRVh5ZU5neTJHNnB2TGJqY2prenppS0I4Wmh5VnR5WElYNFFQYTVWekNoRGlBMjE4aTR5VVBlVXRxaEx0S1NaeHBZK2M2bXFRRFFQ
+bzNJM0REWk1kSEVYWTV6SmJhM0h5U21ZV0xqTnBnUXpSRzhGVWFGR05RaFgwbFRXV2d4d3F6Tkt6MjlNditRUzlXWVAwajFCSElNV1hSZ0E0QWR5TmJZYmpNS1ppUlRXQU5GbkVSYjhINWxNQVNqU3hGbXY0dWdt
+d2ZKeS9nWW1DVWNCOURmeXRINUEra2JoZ3dQcDZZbXFSM3hvR2FhUlhxYW82T01OdmVyZm1ocS9neHpzQlVYSGdqRmJwTUw3bTRkRWVLakpkSUh4LzVvRTcrcjRlRkdwY0lpK0VIcXlPOWg2eEJ6MWM5Z0ttaXVQ
+RUtoTDQrRlY4K3drZjMzRkV0VXNEZzhDUUVNa2JpRng2cG9lTG9NelUrdG5pRGRoVVM5Wm1tSC9UOWYrQ3RaUVNZS1VMTjV0UFliQmNheXRtUHpzaHYrdVBYcGUwK2J0ektuekFRd2tXUGVHVGhCS3BMaU9rb0pQ
+dUZRVVVVWlIzQ3A5WTdjcmZiWjkvRkdHMnBIeFdjQVRqUlh1cFhnajRIZUVoOCtwY3ZUSkFRYWM5UEtsbnNDSW9nWmRLSmRxdmFja2J0VVhXK2ZBWFRDRjRCTFRvRTJZVFlwV2tFQ0pwR25rcllhSnQwWkNXSXky
+a3NmTFQxQU0vaEtheDdJcytVVkkybDU4dm5UOHVrZ2dDV3JHWlVMMVJBU0VmYWhTaUJsWm4xU3dCWUh1M3c4S2tVZk5vWXExbWVSWm9iOGNwajN2L3pYVzNYWWsydER5azk3cC9FT0lGb0h1T2NYaFlLYkUvV0NQ
+TG1xeTRxanRRcUFlb2tDaDBLT0pNNnhlb2ZIMjhqd1lXckRreG5uMXUvZVpHTm9qZVVSQzZrZkRESWRqQUVyK24rbGNDM3JqVEJqeUFDeThjQVFTZU8zQm5SWW5QL2x4eGw1MmhncURTUkE4QjJiOUh4WUl4aVox
+MXUrZ3JKNGN2Y0V4UU41eitqOFNPbXRzQytkOWtnNGVFc1VTV2FNcllPK3I1NVNjQ2FlRXFSOHFmblZTeitaUFdmUDNldER2aTFKaHZMOU81d29zSlJSeGNHdFFpZDJ0NmpKckFDbzFIeDRIVGlMMnJwUWRBM0x3
+L2lnbktGZTh2akRyOWNWbkxKNnFRaWh1NkhkTE12bmFGOWZab0p4aGVnaEN5enc2RkdQVnJENGRxd0dHeFE3d2h5NUlOT2NUdWl0R1RoakJTYVFPWndxMy80VXBNaTM0UTlLRzRkcTFIV0tNU1FwdTE2bUdPUlhD
+TmxTYVZ5dE9mOEt2ZGVGZmhuN1IrekdIZTdjLytPbmliNTlLSWxjdHF1WWY1MWg4MEphZGJmYmZhNVBrU3RETkNkNVRYZXl2MjBrejMrb0VtQ05KSFlEUVE2VXdGQkVtVnRNRVdjQ1l3aVBSUllmT1VHWjNhN2dM
+amN2MnMzekhzSDd0NUsvN3YwRVp4ZzhVR1RLcmlUTXNBaFRXTDJ4NkkvbVF1emkxVG05d0NzY0xrVmJhSys2WXFTYjhudzBpcXBSS0xyNi9paUFzdDQrbGxTanVJWDRDWmIxbnVSSDhlS05JSEpTdk5ldnBCYTlE
+T3FrWlAyeHYxVFBiTUlLeXZsVU5XY0pRRE0yTVVTanhDNXpQOUVmQVBQM0MvaWtuTU8yYWp1QnpZczBreVBvbXFaK1RGZnl0SVoyUWgyTUFTdjZmNlZ3TGV1Tk1HUElBTDcvK0ttQkxkVTBBL0N0UUVEdk9uRGx4
+T3ZzUVN6MGs1bTBkZHplOHIrOUwzL3pWemh6ZUp4QytFQlduTDJYTmtlWHVKQUUwWVVBWWIrY1paUldNRzdFbDJLZWNPR2l2OGxDczhwNmFBb3ZWS080aGZnSmx2V2U1RWZ4NG8wZ2NsSzgxNitrRnIwTTZxUmsv
+YkcvVk05c09HUy9UVUJlZjF6L1pNMldqVjNIcmFZM0o2V3YzTmc3Um1pN0N1cldoY01PNE5hVDRVSjJFOW1jQmtBVWhFQVBGQk1SSGFxbDJXUXFLNUI4OGl5YjBWNGYrVEhuSzg3bHRVaXBCMzVLSXI5LzgxYzRj
+M2ljUXZoQVZweTlselpNNUFrTVI5Zys1N29pTWZod3NYVnZpODQyZVhYYkVZaHUxNjdDTlZVRjNBcHNFODVJU2hrMkFQUlA0diswVGh4eUlEenlqUk9kbjdpS3lpSDB2T1BPaXBWVjJhMHVyam5QbnZueXV2L2dZ
+M1BsN1pBSEFKQ051M3JaMWtZRzNVRWxPWllVSXFTWlRRY2NlNVJFcHZTTFBUNFRFeE1md1NaVTFJWEVzbE05a3pYSitBVFhGVGhJU1FTUmJmRFFERFBjM2k0UUN0UlUvYXBZeDJDZjNmZ25qZUFFSlU5cjlvaW1r
+TWpjRHl6MGNQOGxuSFRqMkJncjZZUW9lTHVnREcveEdMQnlvNDdIMXRBeEU1bElObE92VmtsdFloRndVR3lLN015U0tWWGRuSFkwSlVabkl5WFlLdUJYWFBrL3BuK0ZZeXRvTjB4T0dFZTdGcmx6ZzFMMjlHbTA4
+ZmsxTWdYYzZTeStDTjZmZ1VZY0VwQWZEUmxtKzl2Um12YS9oY1MwREk0Y0FLR2JjL3JwSkkzL2dRYkJIRW41VEcwby9KMXN5SjBCWDg5RHM4M2dCQ1ZQYS9hSXBwREkzQThzOUhENjlWS0EzbmFjWTQ2OGpwZnJL
+aWJUN1BBQURRT3dmMzBpRUVuUG04Qi8vNXpPV3BCNitpVmY0M3NkWkZaam8yRXVEUnk5NU8vZm4yRklHTnRVa1RBWWdGTWk5UjMyUVBuUzVGemVOWXA4bnVlTDE4N2JwU0VCNFFRSFR5bnhCOE0vSDQyNXhDTXcz
+bUoxbUtiZG5hU2diTVVRZmcyT3lxWXdSWWFuWHQ2L3hYWHhrT0VWZ3poejBLdHFob09LMktIR1dSdi9ReVl1K3IrNnFKZHd4L2U4aVRlZjNrV3M3bDYrSCtZR2xoTkJNK2w3dHBBTmtMN0ljVWp6ME5SeXJHakZQ
+L3lPK3IrUkJpd1FYL3ZBVUpjaklJMGtkZ05CRHBUQVVFU1pXMHdSWndCNVNENVdTeEg0d2dPMytENzFyckNqNTBLd3lOSk56NXdFZ3RtYWQwbmpPYklBUzQ2YjgrQklOSlJqUHU2VmVUZXZleWhoVENvd2U2KzlD
+eFhOOGJtdVF1VmhzTnREK3haWkVJZnlVdkh6M25NLzBSOEE4L2NMK0tTY3c3WnFPNEhOaXpTVEkraWFwbjVNVi9LMGhuWkNIWXdCSy9wL3BYQXQ2NDB3WThnQXNXWEpuemlmdmZMSWl0OW9KYzhzdUl4Q3dlN2hN
+Q0x6YWd2b2tPMml6Qk1xTVo4a09IcW00NHdKY2Q0RlBmbW5RSGxJUGxaTEVmakNBN2Y0UHZXdXNLeC9CYXZORURlSEVPZkgzWGRLVWZENjl0ajhLckNub1pmK2EzUDhHbW5UNDRvOGd1NXB0dGsxc0dqRXpuYS9y
+WXNpS3V6b3l2b05ERGlCY0dFVncyU1Nrcy9mc2drYmtGVm9taXhYam9XV09wam5raGp4SnlUTE1wNkc5SkNxYnZueHVNd2NyZGtKSWtmK3I3QU9vWWJodDU5cW15Y3ZQTVluZDJ6cm5QMEQ5cUtKZ1VsemF6OXdK
+ZGFCRDB1RVA4dWJUK2dpYlBjNGZuMFloMGJpckJMZkpqVUhiVE5aNFcxSm8rNWRFS2ZjRHpIT2FTUFBXMFJ5UVFZNjBodjdXUVY3QzErc0pyK1IyWjRBSUg3SmVSak9NTHI4SFF6TFQxZVRHVnlMaTF6RDd1MkFX
+TmRqZlFDS3F4NXBtaTR4RjlwTGtuNkFJcFpoSklHVHprek9ac1ZSRU1Gc3doOUtLdTdrV1plLzJyN21lbmtVREk3cE54VFFMUGQ0dEQzcStuVEtyaVRNc0FoVFdMMng2SS9tUXV6b09MNW5kSG5kc0VybjlCb3FI
+L3M4cHljTXp0WnpSQSttZElhbFZBUDl6dEVZc0hLampzZlcwREVUbVVnMlU2OVdTVzFpRVhCUWJJcnN6SklwVmQyY2RqUWxSbWNqSmRncTRGZGMrVCttZjRWaksyZzNURTRZUjdzV3VYT0RVdmIwYWJUeCtUVXlC
+ZHpwTEw0STNwK0JSUFd3S2RjUTBwanFlaXFZdzhtMll5RVF3V3pDSDBvcTd1UlpsNy9hdnVaNmVSUU1qdWszRk5BczkzaTBQZXI2ZE1xdUpNeXdDRk5ZdmJIb2orWkM3T2c0dm1kMGVkMndTdWYwR2lvZit6eWhX
+czh6M1laVUFicmU1c1M0UkRqK3g4SG1pNDdiS1ZwTFRQbGtERDB4bW9CalFXTVV0MklDUUFLMElBUFd3bVkvRWZ5Y3NUMjRSNklLUElwbVJJMExpbWJIVGhxQURmR3IvVko4UHd6emFZWjNUdmdXbTZzUC9PVEM5
+c2hBUE5weXh1bGtaeVNLUUNld0Z5MHFtekZ4Zkxhcm1IK2RZZk5DV25XMzIzMnVUNUVyUXpRbmVVMTNzcjl0Sk05L3FCSmdqU1IyQTBFT2xNQlFSSmxiVEJGbkJ1WEdDYm4zWDJLbHlYeldaYnV2bkdOZWpSK0Na
+aUdPTXMzNHdvd1V5VkVYVDJMWTlvNHBnVlRYUWdUdGU0QVc3ZkNCUkVzVlRud2UwUFg2cW9BKzZTWXcwcUZVNWRyVTZ4RVVNQi9mSHZuOVEyV0Z2dUdVeW1WWDZwZEpSQVpMSUZBZUluMm4zZ0N0K0Q3WVNhK0c2
+MFBQMTNHUkJ2dUp0SlBDTlI2Z3dVQmw4WkRoRllNNGM5Q3Jhb2FEaXRpaHhsa2IvME1tTHZxL3VxaVhjTWYzdklrM245NUZyTzVldmgvbUJwWVRRVFBwZTdhUURaQyt5SEZJODlEVWNxeG96UEFBRFFPd2YzMGlF
+RW5QbThCLy81ek9XcEI2K2lWZjQzc2RaRlpqbzJFdURSeTk1Ty9mbjJGSUdOdFVrVEFZaXhHOEluY01CSno1QVBqeUtOSmtNRXhxZVFKNWxqQjBFaGp3c25KekxRZkRpanlDN21tMjJUV3dhTVRPZHIrdGozR0tj
+b0FxaG1ZMXdGWlhvazZVL0hRTWpod0FvWnR6K3Vra2pmK0JCc0VjU2ZsTWJTajhuV3pJblFGZnowT3p6ZUFFSlU5cjlvaW1rTWpjRHl6MGNQcjFVb0RlZHB4ampyeU9sK3NxSnRQczhBQU5BN0IvZlNJUVNjK2J3
+SC8vbk01YWtIcjZKVi9qZXgxa1ZtT2pZUzROSEwzazc5K2ZZVWdZMjFTUk1CaUFVeUwxSGZaQStkTGtYTjQxaW55ZTU0dlh6dHVsSVFIaEJBZFBLZkVId3o4ZmpibkVJekRlWW5XWXB0MmRwS0JyZUxBbitIYXpL
+cysyOEZpZVNraEliaXhRMncwcUZTTVNlUjF3ZEFaWlpHaVY5RjdHNjkzcWozK3hRaUFEbmZ0Mm9vbUJTWE5yUDNBbDFvRVBTNFEveDIwZ3dvOXJCYkpvZUxKR2ZITkNUVFhFNit4QkxQU1RtYlIxM043eXY3MHZm
+L05YT0hONG5FTDRRRmFjdlpjMlI1ZTRrQVRSaFFCaHY1eGxsRll3YnN1LzE3VkE5R0RkbUlndGswTy9nVXVKc2dCTGpwdno0RWcwbEdNKzdwVjVONjk3S0dGTUtqQjdyNzBMRmMzeHVhWGl2bTdPVlQ5K2Z5aTU2
+cHNjeHdSRjhaRGhGWU00YzlDcmFvYURpdGloeGxrYi8wTW1MdnEvdXFpWGNNZjN2SWszbjk1RnJPNWV2aC9tQnBZVFFUUHBlN2FRRFpDK3lIRkk4OURVY3F4b3pQQUFEUU93ZjMwaUVFblBtOEIvLzV6T1dwQjYr
+aVZmNDNzZFpGWmpvMkV1RFJ5OTVPL2ZuMkZJR050VWtUQVlpeEc4SW5jTUJKejVBUGp5S05Ka01FeHFlUUo1bGpCMEVoandzbkp6TFFmRGlqeUM3bW0yMlRXd2FNVE9kcit0aGloMDkzSStKS2s0cHhJTmprVThV
+MXAwaURTSWl2alByYnB5aFN2QitGT3VUaUttZkJzbTVvd3QrcERnMHA4YlgwRHRTV3NnSXY1eTVYOUhqOEV4N0U4YWl4SCtFS2xlOWZIV2c5T1NNbkRpZlozNlI4WHBhaWtONys2MC9UYThSNXdiQnVDMHlKTkFO
+NDZTdVdOdzJTRkgrd09lcVFlNEoxN0g4ekpjWlBzcnhTdlljY01ITk9KaGVERXpZN3kvTC9obmJNQTVLd2VhaDd1NmJ5dzVYQjhmamJuRUl6RGVZbldZcHQyZHBLQnFYOFQyNUx4QjRuZXB1REdYN1BrcWcvYTBy
+aWdKWE1DTW9ucmtacWxqTW1xWTU1SVk4U2NreXpLZWh2U1FxbTc1OGJqTUhLM1pDU0pIL3Erd0RxR0c0YmVmYXBzbkx6ekdKM2RzNjV6OUEvZWNHd2JndE1pVFFEZU9rcmxqY05rcUhkdExIVm5HK1AyWXRJdjVY
+VmdJOXpiYmdKZFhNcEtONHVDL2NUWEhmQXRHRXFFK2JYWUVMMkh0bDNIeE1xdGtkSkxwR3dDekNuR0d6Snk5YmtoSjlXTXJhRGRNVGhoSHV4YTVjNE5TOXZScHRQSDVOVElGM09rc3ZnamVuNEZNT0FReWVraUFj
+ekZST0xsN2NneVlZWXhDWnpoc0dvSVpCak9KMzdJV2RzamVRSTkxanpVMUJNbGZBYnVvSmp4TEtWeDF4YXJjampaN3R4Q1FOWW9XMGs0MHovQU9CNTBhNUxzRUwzMWdYd1FsNmRQTUpIZkk1enpVdWo4T2FuNHdv
+R3U3TDg5YlllQkovMnp0bk15WVJWcklIZkw3dk5qWHRvNHprSDQ0ZzIwUUpTM01lUjBpdCtBeEZVbWRWaDFGdS8zYlBaMVdmVnNSRkZXS1FDZmpjcURMenpkblBaU1BBWThoOHBwcVNCMVNubzhGOEN5TmxhSVhn
+ZnJxZ2MvdUxGRGJEU29WSXhKNUhYQjBCbGxrYUpYMFhzYnIzZXFQZjdGQ0lBT2QrM2FpaVlGSmMycy9jQ1hXZ1E5TGhEL0hiU0RDajJzRnNtaDRza1o4YzBKTk5jVHI3RUVzOUpPWnRIWGMzdksvdlM5LzgxYzRj
+M2ljUXZoQVZweTlselpIbDdpUUJOR0ZBR0cvbkdXVVZqQnV5Ny9YdFVEMFlOMllpQzJUUTcrQlM0bXlBRXVPbS9QZ1NEU1VZejd1bFhrM3Izc29ZVXdxTUh1dnZRc1Z6Zkc1bzdCWVhXVU03UGxRQm5xa2cvblpG
+ZVFNamh3QW9adHordWtramYrQkJzRWNTZmxNYlNqOG5XekluUUZmejBPenplQUVKVTlyOW9pbWtNamNEeXowY1BCU0dQaGFMMHlVL241aE9nZ2ZQUHVNUXNIdTRUQWk4Mm9MNkpEdG9zd1RLakdmSkRoNnB1T01D
+WEhlQlQzNXAwQjVTRDVXU3hINHdnTzMrRDcxcnJDajUwS3d5TkpOejV3RWd0bWFkMG5qT2JJQVM0NmI4K0JJTkpSalB1NlZlVGV2ZXloaFRDb3dlNis5Q3hYTjhibXZIckJkL2hSOEtUdSt5RmVMcHJuVHlzZE5G
+K2ZoVjZSc0lhYy9WQUEzTkRxWTU1SVk4U2NreXpLZWh2U1FxbTc1OGJqTUhLM1pDU0pIL3Erd0RxR0c0YmVmYXBzbkx6ekdKM2RzNjV6OUEvZWNHd2JndE1pVFFEZU9rcmxqY05rcUhkdExIVm5HK1AyWXRJdjVY
+VmdJOXpiYmdKZFhNcEtONHVDL2NUWEhmQXRHRXFFK2JYWUVMMkh0bDNIeE1xdGtkSkxwR3dDekNuR0d6Snk5YmtoSjlXTXJhRGRNVGhoSHV4YTVjNE5TOXZScHRQSDVOVElGM09rc3ZnamVuNEZIeHBOWDRZN2RB
+ZDhzYms3MXZya2V2b0l5MUVPeWdXYnhsaDJjMmt6UFNVNU9JcVo4R3libWpDMzZrT0RTbnh0ZlFPMUpheUFpL25MbGYwZVB3VEhzUXVudHRFZXZ0ZW9TOHJramRra3lWaEhYekZSOTFreW03bHQzYUZsNTlkR2ow
+TW81UlljNUwyZlVXUFNoemFRUjFoaytkNWNXUHdlNWpya08zTEgrcEo1VkpHU3lyM3Z5b1p1UWcwTlBxeVkrbGYwc0JkWmVSRnJUNW80NEtIaGZrSkRieVNrNElZZU1zbUxUMTBudnVGRm9nU2RiOXhjUXB2c0Jm
+NUt4YmU0MThaRGhGWU00YzlDcmFvYURpdGloeGxrYi8wTW1MdnEvdXFpWGNNZjN2SWszbjk1RnJPNWV2aC9tQnBZVFFUUGxsK1JaU3FQVk10UWNyZms0TmJtZWduMmQra2ZGNldvcERlL3V0UDAydkVlY0d3Ymd0
+TWlUUURlT2tybGpjTmtoUi9zRG5xa0h1Q2RleC9NeVhHVDdLWmdLODZtem1Pc2VnaWVueUlhNHRtRk5UcHUyek1lOVBLWWdXcGNLQ3lqc2RiY0hzbWFOazNLTnJDVWMrZnNxc3FEVzJ0RVB5d3VaQlpHVE15UmJP
+RW93U0RYZWVSSVREOGMxSG5HUS9uMkxCNkwzNU41QW0vT3pQNmlRVE9scVMrVUFQdHFibEFjcGhPOFdNaGRuQlVXWTlScFZqUTRDam9pR0o1bDlWUG84emxxUWV2b2xYK043SFdSV1k2TmhLNXRQNkNKczl6aCtm
+UmlIUnVLc0V0OG1OUWR0TTFuaGJVbWo3bDBRcDl3UE1jNXBJODliUkhKQkJqclNHL3RaQXB3NFBZblpmbm1HL2QwUDh3bERBeGVYeTMzbm9rajJEQm45MTdNZEhWcG1SNjhUYWdhRzRFeE5hZGtFQ21xSGV3Q2Iw
+U21zNWVDZkpZUE9CUDNnTEE0c1VOc05LaFVqRW5rZGNIUUdXV1JvbGZSZXh1dmQ2bzkvc1VJZ0E1MzdkcUtKZ1VsemF6OXdKZGFCRDB1RVA4ZHRJTUtQYXdXeWFIaXlSbnh6UWswMXhPdnNRU3owazVtMGRkemU4
+cis5TDMvelZ6aHplSnhDK0VCV25MMlhOa2VYdUpBRTBZVUFZYitjWlpSV01HN0x2OWUxUVBSZzNaaUlMWk5EdjRGTGliSUFTNDZiOCtCSU5KUmpQdTZWZVRldmV5aGhUQ293ZTYrOUN4WE44Ym1zTHF6dERoeWFN
+UVdYd1EwZHlTenprVnQvS3JkNDE2Y0I2Q2hBMXNYWDdSNU9JcVo4R3libWpDMzZrT0RTbnh0ZlFPMUpheUFpL25MbGYwZVB3VEhzVHhxTEVmNFFxVjcxOGRhRDA1SXljT0o5bmZwSHhlbHFLUTN2N3JUOU5yeEhu
+QnNHNExUSWswQTNqcEs1WTNEWklVZjdBNTZwQjdnblhzZnpNbHhrK3l2Rks5aHh3d2MwNG1GNE1UTmp2TDh2K0dkc3dEa3JCNXFIdTdwdkxEbGNIeCtOdWNRak1ONWlkWmltM1oya29HQjhzYUw4T2tpQUZWejhL
+S3NXUWxzUjQyNnAxbkRvZXVkS3RlU0krL0pQRXc3ZzFwUGhRbllUMlp3R1FCU0VRQThVRXhFZHFxWFpaQ29ya0h6eUxKdlJYaC81TWVjcnp1VzFTS2tIZmtvaXYzL3pWemh6ZUp4QytFQlduTDJYTmt6a0NReEgy
+RDdudWlJeCtIQ3hkVytMempaNWRkc1JpRzdYcnNJMVZRWGNDbXdUemtoS0dUWUE5RS9pLzdST0hISWdQUEtORTUyZnVJcktJZlM4NDg2S2xWWFpyUzZ1T2MrZStmSzYvK0JqZXpLVCtmT1VjR0NTTFpsQXJJbjQw
+Y09OKzlPN0F3cGNvRHBJeExTdTY2cG5jd3NmUjJNdTE2d3E3L0E5WG50ejBZeU5XNTB4a3lKWTBPU3d4YnJqWkd6b25aelNuQVIwTElhTFRqWWN3MzQweXE0a3pMQUlVMWk5c2VpUDVrTHM2VG1lZzRhaTN6TXlS
+YmVucWkwUGk2WHZUTHB6cktwYmxBR1RkaSs3NFJhVk5ETlVWRnlpVFY1dDVzeEhENW4yS2F1cFNTeVFiQnZuMEF2WEp3SlRjMFNKOXBQQ2F0cEZDbFgxWXg4ZG0rTGUxOW1RRTdZckhaa2tkSFIzZTEwRTk1Z2Rv
+MHE1WmI4dWYwK0MzWWwwQ0hFUXdXekNIMG9xN3VSWmw3L2F2dVo2ZVJRTWp1azNGTkFzOTNpMFBlcjZkTXF1Sk15d0NGTll2YkhvaitaQzdPUDRhcC84Q1M1QWEyUS9Ocm1VR3dPRUplblR6Q1IzeU9jODFMby9E
+bXArTUtCcnV5L1BXMkhnU2Y5czdaek1tRVZheUIzeSs3elkxN2FPTTVCK09JTnRFQ1V0ekhrZElyZmdNUlZKblZZZFJidjkyejJkVm4xYkVSUlZpa0FuNDNLZ3k4ODNaejJVandHUElmS2Fha2dlVWVOdHJ5WWxR
+QXVyZm1nZTRoZ3NsQXlPSEFDaG0zUDY2U1NOLzRFR3dSeEorVXh0S1B5ZGJNaWRBVi9QUTdQTjRBUWxUMnYyaUthUXlOd1BMUFJ3K3ZWU2dONTJuR09Pdkk2WDZ5b20wK3p3QUEwRHNIOTlJaEJKejV2QWYvK2N6
+bHFRZXZvbFgrTjdIV1JXWTZOaExnMGN2ZVR2MzU5aFNCamJWSkV3R0lCVEl2VWQ5a0Q1MHVSYzNqV0tmSjduaTlmTzI2VWhBZUVFQjA4cDhRZkRQeCtOdWNRak1ONWlkWmltM1oya29HYWJYSEFNdjk4NnQzbWNm
+Q2x2eGVQbDhaRGhGWU00YzlDcmFvYURpdGloeGxrYi8wTW1MdnEvdXFpWGNNZjN2SWszbjk1RnJPNWV2aC9tQnBZVFFUUGxsK1JaU3FQVk10UWNyZms0TmJtZWduMmQra2ZGNldvcERlL3V0UDAydkVlY0d3Ymd0
+TWlUUURlT2tybGpjTmtoUi9zRG5xa0h1Q2RleC9NeVhHVDdLWmdLODZtem1Pc2VnaWVueUlhNHRtRk5UcHUyek1lOVBLWWdXcGNLQ3lqc2RiY0hzbWFOazNLTnJDVWMrZnNxdGRuMXhPU2JmalZJR2R5ZDlRbmdi
+K1h4a09FVmd6aHowS3RxaG9PSzJLSEdXUnYvUXlZdStyKzZxSmR3eC9lOGlUZWYza1dzN2w2K0grWUdsaE5CTStXWDVGbEtvOVV5MUJ5dCtUZzF1WjZDZlozNlI4WHBhaWtONys2MC9UYThSNXdiQnVDMHlKTkFO
+NDZTdVdOdzJTRkgrd09lcVFlNEoxN0g4ekpjWlBzcG1BcnpxYk9ZNng2Q0o2ZklocmkyWVUxT203Yk14NzA4cGlCYWx3b0xLT3gxdHdleVpvMlRjbzJzSlJ6NSt5cStBcDg2ajhhNkswc3kzVEJvTFJ2QUVkS2Ir
+dVBQMHhnQkpyS2o2dElOYU41T0lxWjhHeWJtakMzNmtPRFNueHRmUU8xSmF5QWkvbkxsZjBlUHdUSHNRdW50dEVldnRlb1M4cmtqZGtreVZoSFh6RlI5MWt5bTdsdDNhRmw1OWRHajBNbzVSWWM1TDJmVVdQU2h6
+YVFSMWhrK2Q1Y1dQd2U1anJrTzNMSCtwSjVWSkdTeXIzdnlvWnVRZzBOUHF5WStsZjBzQmRaZVJGclQ1bzQ0S0hoZmtKRGJ5U2s0SVllTXNtTFQxMG52dUYxQWkweVdaTHU1cFhWalVJWTdQOWdWOFpEaEZZTTRj
+OUNyYW9hRGl0aWh4bGtiLzBNbUx2cS91cWlYY01mM3ZJazNuOTVGck81ZXZoL21CcFlUUVRQcGU3YVFEWkMreUhGSTg5RFVjcXhvelBBQURRT3dmMzBpRUVuUG04Qi8vNXpPV3BCNitpVmY0M3NkWkZaam8yRXVE
+Unk5NU8vZm4yRklHTnRVa1RBWWl4RzhJbmNNQkp6NUFQanlLTkprTUV4cWVRSjVsakIwRWhqd3NuSnpMUWZEaWp5QzdtbTIyVFd3YU1UT2RyK3Roclh1NldFdk10Z2dqSlN5TStFaEZqNXpQOUVmQVBQM0MvaWtu
+TU8yYWp1QnpZczBreVBvbXFaK1RGZnl0SVoyUWgyTUFTdjZmNlZ3TGV1Tk1HUElBTEZseVo4NG43M3l5SXJmYUNYUExMaU1Rc0h1NFRBaTgyb0w2SkR0b3N3VEtqR2ZKRGg2cHVPTUNYSGVCVDM1cDBCNVNENVdT
+eEg0d2dPMytENzFyckNzZndXcnpSQTNoeERueDkxM1NsSHcrdmJZL0Nxd3A2R1gvbXR6L0JwcDArT0tQSUx1YWJiWk5iQm94TTUydjYyRmZKRDVvSjB1RkVGWWp0RkllbHZkN0xhcm1IK2RZZk5DV25XMzIzMnVU
+NUVyUXpRbmVVMTNzcjl0Sk05L3FCSmdqU1IyQTBFT2xNQlFSSmxiVEJGbkFtTUlqMFVXSHpsQm1kMnU0QzQzTDlyTjh4N0IrN2VTdis3OUJHY1lQRkJreXE0a3pMQUlVMWk5c2VpUDVrTHM0dFU1dmNBckhDNUZX
+Mml2dW1La20vSjhOSXFxVVNpNit2NG9nTExlUHBaVW83aUYrQW1XOVo3a1IvSGlqU0J5VXJ6WHI2UVd2UXpxcEdUOXNiOVV6MncxRVJqbHhyUm53c0NtR3ZERlY3N0JFTUZzd2g5S0t1N2tXWmUvMnI3bWVua1VE
+STdwTnhUUUxQZDR0RDNxK25US3JpVE1zQWhUV0wyeDZJL21RdXpqK0dxZi9Ba3VRR3RrUHphNWxCc0RoQ1hwMDh3a2Q4am5QTlM2UHc1cWZqQ2dhN3N2ejF0aDRFbi9iTzJjekpoRldzZ2Q4dnU4Mk5lMmpqT1Fm
+amlEWnROaStjbXlXaldwa2lZamt0a0JpMDFEWllXKzRaVEtaVmZxbDBsRUJrc2dVQjRpZmFmZUFLMzRQdGhKcjRiclMxZEwwN0szekJHRjl3RDkyMlFPMHh5MnE1aC9uV0h6UWxwMXQ5dDlyaytSSzBNMEozbE5k
+N0svYlNUUGY2Z1NZSTBrZGdOQkRwVEFVRVNaVzB3Ulp3SmpDSTlGRmg4NVFabmRydUF1TnkvYXpmTWV3ZnUza3IvdS9RUm5HRHhRWk1xdUpNeXdDRk5ZdmJIb2orWkM3T0xWT2IzQUt4d3VSVnRvcjdwaXBKdjBW
+VElOck5MTEtGZHIrcmJxQ0o1dkp4eVE0UGpRRkNGOTEwMlhkMFNVVVI3UXRCcUoyTStPWEFVaEpwajdXVWpmQnlmNWZSdDRDU1dLZ1F1T0xwbmhYY3FGTm5vcEtvUGhwajI5WTd4TjNkR3dwTzJOQW5FYXNaSzFq
+Rk9uQ1B0ODNob0dac0wzQll1aDl3Y044WDNzVWgyTUFTdjZmNlZ3TGV1Tk1HUElBTG9kMjBzZFdjYjQvWmkwaS9sZFdBajNOdHVBbDFjeWtvM2k0TDl4TmNkOEMwWVNvVDV0ZGdRdlllMlhjZkV5cTJ1aUwvbnlD
+eFFEd3BFTkU2OTZ0WnQzbDh0OTU2Skk5Z3daL2RlekhSMWFaa2V2RTJvR2h1Qk1UV25aQkFwcWgzSjVxeFkxeVEvczB4b3c2a0w5TTJRaGpFSm5PR3dhZ2hrR000bmZzaFoyeU41QWozV1BOVFVFeVY4QnU2Z21Q
+RXNwWEhYRnF0eU9ObnUzRUpBMWloYlRsOGhOMjdaRkl0TmgzMk02aFBjTjQxNk5INEptSVk0eXpmakNqQlRKVVJkUFl0ajJqaW1CVk5kQ0JPMTdnQmJ0OElGRVN4Vk9mQjdROWZxcWdEN3BMRk44Z2ZCOWZHUzZn
+TUpKVis5MElpY2NrT0Q0MEJRaGZkZE5sM2RFbEZFZTBMUWFpZGpQamx3RklTYVkrMWxJMFQxamVncFczMWt2R2Q2cTI4cnV1R1FNamh3QW9adHordWtramYrQkJzRWNTZmxNYlNqOG5XekluUUZmejBPenplQUVK
+VTlyOW9pbWtNamNEeXowY1BCU0dQaGFMMHlVL241aE9nZ2ZQUHVNUXNIdTRUQWk4Mm9MNkpEdG9zd1RLakdmSkRoNnB1T01DWEhlQlQzNXAwQjVTRDVXU3hINHdnTzMrRDcxcnJDajUwS3d5TkpOejV3RWd0bWFk
+MG5qT2JJQVM0NmI4K0JJTkpSalB1NlZlVGV2ZXloaFRDb3dlNis5Q3hYTjhibW90N281WTZnTzByaVJ0R1ZZSVZOcDRmb3NNR3hwU09QRVpWNU90SzhoTU9lenBpUW1MYkNuOGV0K1o4OE0xc2tlM1BzSHVTTHpV
+U3RRVnQrcGRpVXFQcVpXckhBWHY5TitzVGl6MTZjWTZwQ3hMeHNHNnFxVmRDdnM2OWRBTk5Vd21rUUdyUlFvSWEzRTZ1dTBSRHZERURETWl1clNYUmVZRTdxY01paTlsYVRKSnR4cHNHaHUyay9oNHZYR1IrVi8v
+aXhENmcwTzhEdXdudHJieXlnUVdWV0p1aXlXSm5YVFVKTFloWXlQa0lOUzhpUmlUMGZ0c0QrNjFKMG9wa1ExOFpEaEZZTTRjOUNyYW9hRGl0aWh4bGtiLzBNbUx2cS91cWlYY01mM3ZJazNuOTVGck81ZXZoL21C
+cFlUUVRQbGwrUlpTcVBWTXRRY3JmazROYm1lZ24yZCtrZkY2V29wRGUvdXRQMDJ2RWVjR3diZ3RNaVRRRGVPa3JsamNOa2hSL3NEbnFrSHVDZGV4L015WEdUN0taZ0s4Nm16bU9zZWdpZW55SWE0dG1GTlRwdTJ6
+TWU5UEtZZ1dwY0tDeWpzZGJjSHNtYU5rM0tOckNVYytmc3F2Z0trSVlWVldNYU9kVnpEclJuMTV5WEJEek9UUGFoTkI3RU42cURydUswakR1RFdrK0ZDZGhQWm5BWkFGSVJBRHhRVEVSMnFwZGxrS2l1UWZQSXNt
+OUZlSC9reDV5dk81YlZJcVFkK1NpSy9mL05YT0hONG5FTDRRRmFjdlpjMlRPUUpERWZZUHVlNklqSDRjTEYxYjR2T05ubDEyeEdJYnRldXdqVlZCZHdLYkJQT1NFb1pOZ0QwVCtML3RFNGNjaUE4OG8wVG5aKzRp
+c29oOUx6anpvcVZWZG10THE0NXo1NzU4cnIvNEdOOU43cjhrNmVQUjY5Umhzdm5ZWEthLzRPWGJtSEVmdTRQK1RtOURzQUFFTjV6UDlFZkFQUDNDL2lrbk1PMmFqdUJ6WXMwa3lQb21xWitURmZ5dElaMlFoMk1B
+U3Y2ZjZWd0xldU5NR1BJQUxGbHlaODRuNzN5eUlyZmFDWFBMTGlNUXNIdTRUQWk4Mm9MNkpEdG9zd1RLakdmSkRoNnB1T01DWEhlQlQzNXAwQjVTRDVXU3hINHdnTzMrRDcxcnJDc2Z3V3J6UkEzaHhEbng5MTNT
+bEh3K3ZiWS9DcXdwNkdYL210ei9CcHAwKzJ6c0RBdGo5RTViQ2EzUm5BV2hHSUlQNEE2U1ZJM05JbWRqRmtxQ25IZVhQOUs4YlZETUF4YXh1bi9WRGt3SHpGQkxmOHozRG5pbG1teFlETHhDa3MyYzBwb1QySzBY
+aFVDcHd0TGEraWJkOGJlOVNVR0dTQmY0TEtHeCtHUEtXb2lrZ1NMTW4xSitHUlJFcm9YTHhPY1c4WDhnR000ck8vVUlKWDRxc2hSSG0yRTdXWEordHdvc0pFSVpGZzlXdE1TZGs0VGREaEhydENaR2N0RzExQ2h6
+dnNPWXRmczBTVmI5VGR4SHZsVkZqbUhmUGlheDZZVFF2SDRPQ3ZUNllNVjdMSkIzdXBadTdlTHJOQ0RuUnEzSDBqUVFEMVRIQk9CbER0cmMyalZxQmV1cURIdjN5andxMmRPTEZjT3pQQXZldUExRUJuYjR5L0pJ
+b0xUaVMxK0wxT2tiZ3BRMmRzREtHQlhneWtBeTJ3VDl5bmRSWmxxRWxkbmZVNkNSNVZyV1dia082RmpWcmU4V0NUSjVtZnhwM2p5ZWtKcUlQdGVNd09YOXJsWlJZMkVQcGtZeCtNTVFTM0FPN1RSNU5rOGExWkNE
+YVFzY3JSR0F0a2VrYVRURmVHbm1QOS9hVkM1OFB0ZDRiZjN0MDkwY29zT1JXaGJrWUFvNHo2YmFZclpEUTRPZzNhTFN5dUVPZEVBWmoxRDI4RHZmNXhNeDMzWE5ML3FoWGZzSWVVVUMyM2pLdjRzMVE0WE5GYWdx
+R2ZlSmRzZVFGdWNuTXRieGhyQU9uYWR3QlRJQkN5aWNaMFNDbW1kU3hHdE9pMGpaUDl6bXFpQjlldXF4UkxnSmo3YWdLNVZnWG1MTU51YnljejNEdUszeTJiVW1KL1huTmtERzZSWjNKVkQ1d3EySFAxdUpOLzM3
+ZC9ldGt6Y2pUck1MdThmMmJBMThJQ3YrK29GbWlzZzFJNzdCTWtwNjFZb0QxSGtQYVU1QXlXTkFkeDR6ZnVQd0xTNERpcGVFQUZ0UG5peWZuUjJmV056VFBwdDVjR0huUlFRRWFJR3ZNaGdFZEFSV1NjaU9lSWF6
+TWFXTW9qZm1RRHdMVllPV2pwY3V4U0o2VmY0ZGMrZm12MVYzZVJNMWtlOG5la2dTbXZMRUZNWUFXbHJodGRJTjc4K0NIcEJHM2hWRVNCUDN3Ui9MbGI5R25vUFNaTy9lbHBIem9GcWh3Y08wV2hHRjF4em5lVE1Z
+SFdhai9JTEN2Q25sTkt5L21lWHhwbmUrZTU0d0JTd2F1a2pwVTE5WXBORStVSXRpZXFYYnZpSC9zdVFZL09XNnZpVzlvYjh0UElpSUwwVUxiaVRieTgwM1F0TVcwTVFnUWhUUCtuaHZRUTZPRHo1V3h5cFVyK3VJ
+cTNGRmxadVlsTTk4eG1RZVJoZjk5R2x5NjdsR3JOVEJLaUN1TzNmc2NFcGpZNW42S0lMVnhZWWhBaTZuZ0dSVXRkamdVWjJEYXQraGRlUXRmNmZkSXBXa1FXN1E4U3Q3cy9OTG5mL0hhaC8zcVZGSkp0cXhNQk1h
+TUJsN1RBVlRMZDRkeS9YeWt1cGxLTEI4OTdqVkFMRWJQdjZCNW5Ca0VEMlBFK2c2RUVOaVJMYU9FVEpFd3UzcCsyUytndjlYZ2t0MFJueHp0QlI2SUs0N2QreHdTbU5qbWZvb2d0WEZoYjhMQzZjTlFwYURRTnNy
+NWs1RitCcVBtcFE4WDZ4bFptL3lhaC9RRFQ1ZDJ3a3QxcGdhR3RFOWM2aUdGSEdmNWJ0aTljSUFCOGd4L1NSOElTV3FYVnhVWWI3bjZoc1pEWktybmNINWcrT2g2eTVqOTN6ZDhPbXV0a2FVS0Jycm15U1krWmRH
+cEFONi9KTXpHTFlPeldFdS9qZ1djaUlpZ3paZ0hid0hqcE9rQWxEQXV2LzRmNzJOTXRPQlk4bVhRWXZ6RVd3Z3p5a3FRdERRTTVwRFYzNnZFKzBKSnl2YUtZam1kRENjSHJOUFMvSkdGYTgvaDczanFHeC84R0pK
+T3E2dis3VDVzb2RmZjlhYjlsOVVla1pEc3NCbzYyNHA0VXhTOWx0Z2VXeDV2K0N3OWdlbUEwaXA2T1A3eHpPeW9CU21MNTNXRWdDRTY1Z2l6cVhGSVNkTHRoenJNUmszS3pXQndVQ2R2T2ZyR0hkbDduOUZ3ODQ5
+bzR0TDNWVDVjVC8yTTJvbVlETW5kSTNBRXlia1NZWFRlNFlYMXVwektpc0J3SnpqSmxuTHJKOFRZN2ZUK2dkM1R2VzIzMHFEWjBabnVlKzNwcSs3aFB0UzlwVm15eVdEWm9pZFRQYkFTUjhsNHRXOHpXdUdEZGh1
+ZWl5TFBSVmZib1VLYlZZb0F6NUlqVzJvUGo0YU1yVHFWaXorR3o1M2NuUTJTR1BMb1RhRnNqM2I0ZVppbzcyTlJBODVHb2wrSjY3NW51c00rTDljNWhONmVqM2duTkRmWUxuUDBkQXhQdy9DWldlUzRXOVJOeEZ3
+Sk90dk1UdzJQS3hXaEpLbUJIRlUrSlBiaElUVlVGSFk1OXZmbFpVZXRjVzc1Q2V6K0xrMFFLRng0clJ0Wmtyc05pcmtRZjJDOVZkeXBTcGN5UkZ0ZmJxWEpFTDNQT1JVRVZURDcyR3h1UGRmeCthdmZIYzlFeXJF
+N3E0cUtueHFoZDhESWRvLzlCOEpNWWZWMmp0VzYrTlNHbTVhL1ROeCtQYVFqSVBpdHFKV3pBOWtqdUw2MDdmaWFwcjdoaVQvRkRxSXJqMmdPOFI1RUR4cVRNbCt0VmxPaHM2dm1BMHRpL1ZVSDdwc0dWenBpb2tN
+cnZSbWxERGxjNm9kSDdXRGpCZ2J1dEZOUmFjN0lPMW1vL3cyZHN4L1F0VHZrZzViSDZuZEFGTWU1aVJYVHF2MUJDOUQzNTRLcUxNbGJ6NGxMTGxPN29IV0NXQVBrODVkdTcwMVlHaCsxVHVaQ2MyaDNsNS9WRjVW
+OHRDK29pTFlwVk5Bd3luQmpYemtkYVpscm5DakowMzd5bFlVeUtUTXdHOTlGaUNISUlZZ1ZKTlVDVXhIMW4zaWNoL2JwUHYxQkM5RDM1NEtxTE1sYno0bExMbE83b0hXQ1dBUGs4NWR1NzAxWUdoKzFNb3A5LzdK
+b1QwMlFhcFczSmlhSDN0d0ZidTRGaHhPNlVxRllKZ21DZnpDekkyUUFhMkk5RDVyd1RSWDVFWDhlOFVjdUVKZ0ExNC80dkxuL0RvNGNjcEtLRkhEbzdaVkVhT1JPQjByUm14cWgwcEVrTndzSXQralQrcEVkN0NF
+ai9GNTlwc0lzY3AzMWFmTkhkbi9zc0JyaFZFRDcwYWpPWklCT2YwT3hZUVRKMDM3eWxZVXlLVE13Rzk5RmlDSElJWWdWSk5VQ1V4SDFuM2ljaC9icFB2MUJDOUQzNTRLcUxNbGJ6NGxMTGxPN29IV0NXQVBrODVk
+dTcwMVlHaCsxdVk3SDgzUmRKU1Y5YTlQU3huMVdtNDd2Z3FPeG5aeUE2dG5CTUNDTTJvUHV0Rk5SYWM3SU8xbW8vdzJkc3gvUXZPZ3l2bVU1TWhjZElYQW1yc1pIMzZqdlkxRUR6a2FpWDRucnZtZTZ3ejR2MXpt
+RTNwNlBlQ2MwTjlndWMvUjBvbStMZE16MjRUanVjM01jYnF4UzdhczQzMCt1Z2FDV1hwM2FsUUNWSjB0U3N0RE0zbjF5R2FjNERhWGZESUlHbGxQR2hoZU1MaWIxQ21JWEpCVXNSMzdxWHo1d1VtR2ZVU3JycDAw
+aUFMQk1rTjU5OERlRjlqdldNSEFFd0pMRDhpSlc4UDFQNXZZMUFwakY4VFR6YzRMM3RBdjI1RnFtY2JYaHpjNlVwWFVGNm5NS3FJcmJoWmRkeUdUWG9FbjVnSmxqeXlvSXdWZUorVC9YVFhGT3dPa2t2QnhQOWRh
+VGxmbkFKMHp5ckFPNnlZbFYvNjVYdWNJUm50cnNjTE9WOTJjS2V1elNrbEJTRWxxK3ZGVlRTd2xHa2RoNWZlQzE4NXp1cS9ReGh4WUdETkgzTnBmTFZUdTdmQ3k4b3E4SWplRlY4SmUyQW81VjVYQ3ZkSjdodGVz
+bnhOanQ5UDZCM2RPOWJiZlNvTm51V0N1VHk0dmF2cHR2WEY0TGRhT2ZzM1BQSThTTW8yT3VUVWVJeTBUbGlRVC84OUxONHJOOTFuWWFPR2YwWWlhRWVTQ21IOU5OTlQ3ZmtwWXNmeGZrTzMvUHBiaWswaFZoN2E0
+ODdGWmxpWWRqajFsTzZ1M0phajBKZjlWQ0gvME5QQjZRWTZUNHhGUUJyejV2US9zN2FBQ0NrMUVmOFlHUmtyVWtvdk5RNTdKdG11TWZrWkEvbG91bHZwRXBrd2x2UVdiKzdXNXprYm1pNFJ1VGp4VzZrb29VY09q
+dGxVUm81RTRIU3RHYkdxSFNrU1EzQ3dpMzZOUDZrUjNzSVNQOFhuMm13aXh5bmZWcDgwZDJmK3l3WGwva1lPSUxwZDdFMk50OUo3MUFQMkdqKy9rMUtlWjVWK1hjQWFqMVpOeUg3VnNaWE1VS3EzOGFNdkxmZW5o
+ajdUa1ZoakhZaU5KUGNiRjNWUlVuMTQzaFZmQ1h0Z0tPVmVWd3IzU2U0YlhySjhUWTdmVCtnZDNUdlcyMzBxRFpTYmo3L29FV3lMOWhidVlnUXNqUXdzNGNRRVFsZzRaUDVBeWN6K2ViZjVoRkNKWitPTmJUaEds
+NWc0SjdEK2QyaUgyUlJORi9SSlFTOU9PZkdQWENLeC85bjRoNWFDZHVSVks0ZlhianpvWncxaThyTVhtemlUQjJCZGR5VGRsWkV5S2VrMjlNSW9HWHVRQytwZy9RZTBNaUdVUkREQWw0T3ZsSzQ1QmkxR2tLMFA5
+NHNJUEdqbnVWSDYzN2o4MUFVOGdwaWZwL2JsR25mVmZkVXdmR0ZkVS9QbytyZ0tVaTNqYThFRk9LUW5IZThuSmRMS0EwclBlZ093VTJwVSs3dTZCMWdsZ0Q1UE9YYnU5TldCb2Z0V0FoTFI0KzFlL09BYzRiUGJh
+L1M3VGRHRk9iKzV3WkFmSnM4cTJuQ3AwWDY0aE1ZQXlmQTI2b01pR0FvNFpoMEdZSFYwV3NGSnNudzdMU2Zobkg4MUVRZjJDOVZkeXBTcGN5UkZ0ZmJxWEpPWnM2UllBRno1T2RaSFQ2ME9RakE2cTMwMDRhdCti
+TWVrWjRCOXhDWXZJS3V4QVZpekhLbHp4SVlwTXpHVTRabmV0anlmUVBpeVhrSXhXblZhbHAwU05rME93Q3o4NUgyd0p6Mi85TVNjbjRNMno4dkU2THAxMjJSUWcvalhsK0hjYlF6cVB3MGhHcS80bVlFMng3aTdj
+djFKcnI0TjNJR24zdzdSNXFHSmM2ZTd5dGVBdG1qUUo3U1Bja05uYUIL
+    </script>
+</body>
+
+</html>
