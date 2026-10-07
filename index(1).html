@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="en-us">
+
+<head>
+    <base href="https://cdn.jsdelivr.net/gh/aukak/hollow-knight@2fc2e7149f0d5b2609b135ab48f00fd973930635/">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Hollow Knight</title>
+    <link rel="shortcut icon" href="TemplateData/favicon.ico">
+    <link rel="stylesheet" href="TemplateData/style.css">
+    <style>
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            overflow: hidden;
+            background: #231F20;
+        }
+
+        #unity-container {
+            width: 100%;
+            height: 100%;
+            position: fixed;
+            top: 0;
+            left: 0;
+        }
+
+        #unity-canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* ---------- debug overlay ---------- */
+        #dbg {
+            position: fixed;
+            top: 8px;
+            left: 8px;
+            z-index: 1000000;
+            font: 12px/1.35 ui-monospace, Consolas, monospace;
+            color: #e8e6e3;
+            user-select: none;
+        }
+
+        #dbg-chip {
+            display: inline-flex;
+            gap: 8px;
+            align-items: center;
+            padding: 3px 8px;
+            background: rgba(10, 10, 14, .72);
+            border: 1px solid rgba(255, 255, 255, .15);
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        #dbg-chip b { color: #9fd3ff; font-weight: 600; }
+        #dbg-chip .bad { color: #ff8a80; }
+        #dbg-chip .ok { color: #b9f6ca; }
+
+        #dbg-panel {
+            display: none;
+            margin-top: 6px;
+            width: 300px;
+            max-height: calc(100vh - 60px);
+            overflow: auto;
+            background: rgba(10, 10, 14, .9);
+            border: 1px solid rgba(255, 255, 255, .15);
+            border-radius: 8px;
+        }
+
+        #dbg.open #dbg-panel { display: block; }
+
+        #dbg-tabs { display: flex; border-bottom: 1px solid rgba(255, 255, 255, .12); }
+
+        #dbg-tabs button {
+            flex: 1;
+            background: none;
+            border: 0;
+            color: #aaa;
+            padding: 6px 0;
+            font: inherit;
+            cursor: pointer;
+        }
+
+        #dbg-tabs button.on { color: #fff; box-shadow: inset 0 -2px #9fd3ff; }
+
+        .dbg-sec { display: none; padding: 8px 10px; }
+        .dbg-sec.on { display: block; }
+        .dbg-row { display: flex; justify-content: space-between; gap: 8px; padding: 1px 0; }
+        .dbg-row span:first-child { color: #999; }
+        .dbg-row span:last-child { text-align: right; word-break: break-word; }
+
+        #dbg canvas { display: block; width: 100%; height: 48px; margin: 6px 0; background: rgba(255, 255, 255, .04); border-radius: 4px; }
+
+        #dbg .btn {
+            background: rgba(255, 255, 255, .08);
+            border: 1px solid rgba(255, 255, 255, .18);
+            color: #eee;
+            border-radius: 4px;
+            padding: 3px 7px;
+            margin: 2px 2px 2px 0;
+            font: inherit;
+            cursor: pointer;
+        }
+
+        #dbg .btn:hover { background: rgba(255, 255, 255, .16); }
+        #dbg .btn.warn { border-color: rgba(255, 138, 128, .5); }
+        #dbg select, #dbg input[type=range] { width: 100%; font: inherit; }
+        #dbg .note { color: #888; font-size: 11px; margin: 4px 0; }
+        #dbg .files div { display: flex; justify-content: space-between; align-items: center; gap: 4px; }
+        #dbg .files code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        #dbg h4 { margin: 8px 0 3px; font-size: 11px; color: #9fd3ff; text-transform: uppercase; letter-spacing: .05em; }
+    </style>
+</head>
+
+<body>
+    <div id="loading-text" style="color: white; font-size: 48px; font-family: cursive; text-align: center; margin-top: 20px;"> LOADING... </div>
+    <div hidden id="unity-container" class="unity-desktop">
+        <canvas id="unity-canvas" tabindex="-1"></canvas>
+        <div id="unity-loading-bar">
+            <div id="unity-logo"></div>
+            <div id="unity-progress-bar-empty">
+                <div id="unity-progress-bar-full"></div>
+            </div>
+        </div>
+        <div id="unity-mobile-warning"> WebGL builds are not supported on mobile devices. </div>
+    </div>
+
+    <!-- ===================== debug overlay (F2 to toggle) ===================== -->
+    <div id="dbg">
+        <div id="dbg-chip" title="F2: toggle panel">
+            <span>DBG</span><b id="dbg-fps">--</b><span id="dbg-ms">-- ms</span>
+        </div>
+        <div id="dbg-panel">
+            <div id="dbg-tabs">
+                <button data-t="perf" class="on">Perf</button>
+                <button data-t="disp">Display</button>
+                <button data-t="save">Saves</button>
+                <button data-t="sys">System</button>
+            </div>
+            <div class="dbg-sec on" data-s="perf">
+                <canvas id="dbg-graph" width="560" height="96"></canvas>
+                <div class="dbg-row"><span>Game FPS</span><span id="p-gfps">--</span></div>
+                <div class="dbg-row"><span>Frame avg / 1% low</span><span id="p-avg">--</span></div>
+                <div class="dbg-row"><span>Worst frame (5s)</span><span id="p-worst">--</span></div>
+                <div class="dbg-row"><span>Hitches &gt;50ms (5s)</span><span id="p-hitch">--</span></div>
+                <div class="dbg-row"><span>Main loop</span><span id="p-loop">--</span></div>
+                <div class="dbg-row"><span>Render size</span><span id="p-res">--</span></div>
+                <div class="dbg-row"><span>JS heap</span><span id="p-heap">--</span></div>
+                <div class="dbg-row"><span>WASM heap</span><span id="p-wasm">--</span></div>
+                <div class="dbg-row"><span>Load time</span><span id="p-load">--</span></div>
+                <button class="btn" id="p-reset">Reset stats</button>
+                <button class="btn" id="p-bench">30s benchmark</button>
+                <div class="note" id="p-bench-out"></div>
+            </div>
+            <div class="dbg-sec" data-s="disp">
+                <h4>Render scale <span id="d-scale-v"></span></h4>
+                <input type="range" id="d-scale" min="0.25" max="2" step="0.05">
+                <div class="note">Multiplies the browser's devicePixelRatio. Lower = faster.</div>
+                <h4>Smoothing</h4>
+                <select id="d-smooth">
+                    <option value="auto">Smooth (default)</option>
+                    <option value="pixelated">Pixelated</option>
+                </select>
+                <h4>Window</h4>
+                <button class="btn" id="d-fs">Fullscreen</button>
+                <button class="btn" id="d-focus">Focus game</button>
+            </div>
+            <div class="dbg-sec" data-s="save">
+                <div class="note">Saves live in this browser's IndexedDB. Imports are applied on reload, before the game boots, so the game can't overwrite them.</div>
+                <h4>Files</h4>
+                <div class="files" id="s-files">--</div>
+                <button class="btn" id="s-refresh">Refresh</button>
+                <button class="btn" id="s-backup">Backup all</button>
+                <h4>Import</h4>
+                <button class="btn" id="s-import">Import save file…</button>
+                <input type="file" id="s-file" hidden>
+                <div class="note" id="s-msg"></div>
+            </div>
+            <div class="dbg-sec" data-s="sys">
+                <div class="dbg-row"><span>GPU</span><span id="y-gpu">--</span></div>
+                <div class="dbg-row"><span>WebGL</span><span id="y-gl">--</span></div>
+                <div class="dbg-row"><span>Max texture</span><span id="y-tex">--</span></div>
+                <div class="dbg-row"><span>Browser</span><span id="y-ua">--</span></div>
+                <div class="dbg-row"><span>Cores / RAM</span><span id="y-hw">--</span></div>
+                <div class="dbg-row"><span>Screen</span><span id="y-scr">--</span></div>
+                <div class="dbg-row"><span>Storage used</span><span id="y-store">--</span></div>
+                <div class="dbg-row"><span>Game cache</span><span id="y-cache">--</span></div>
+                <button class="btn" id="y-copy">Copy report</button>
+                <button class="btn warn" id="y-clear">Clear 900MB game cache</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const DB_NAME = "cachedb";
+        const STORE_NAME = "files";
+
+        function openCacheDB() {
+            return new Promise((resolve, reject) => {
+                const req = indexedDB.open(DB_NAME, 1);
+
+                req.onupgradeneeded = () => {
+                    const db = req.result;
+                    if (!db.objectStoreNames.contains(STORE_NAME)) {
+                        db.createObjectStore(STORE_NAME);
+                    }
+                };
+
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error);
+            });
+        }
+
+        async function saveToCache(key, blob) {
+            const db = await openCacheDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(STORE_NAME, "readwrite");
+                tx.objectStore(STORE_NAME).put(blob, key);
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+                // quota errors abort the transaction without firing onerror
+                tx.onabort = () => reject(tx.error || new DOMException("aborted", "QuotaExceededError"));
+            });
+        }
+
+        async function loadFromCache(key) {
+            const db = await openCacheDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(STORE_NAME, "readonly");
+                const req = tx.objectStore(STORE_NAME).get(key);
+                req.onsuccess = () => resolve(req.result || null);
+                req.onerror = () => reject(req.error);
+            });
+        }
+
+        async function deleteFromCache(key) {
+            const db = await openCacheDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(STORE_NAME, "readwrite");
+                tx.objectStore(STORE_NAME).delete(key);
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            });
+        }
+    </script>
+
+    <script>
+        /* ===================== debug overlay logic ===================== */
+        window.HKDebug = (() => {
+            const $ = (id) => document.getElementById(id);
+            const t0 = performance.now();
+            const ls = {
+                get(k, d) { try { const v = localStorage.getItem("hkdbg." + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+                set(k, v) { try { localStorage.setItem("hkdbg." + k, JSON.stringify(v)); } catch {} }
+            };
+            const D = { instance: null, scale: ls.get("scale", 1), loadMs: null, cache: {} };
+            const fmtMB = (b) => (b / 1048576).toFixed(0) + " MB";
+
+            /* --- frame timing: Emscripten's main loop schedules Browser_mainLoop_runner once per
+                   game frame, via requestAnimationFrame (vsync) or setTimeout (when the game caps fps) --- */
+            const times = [];               // [timestamp, frameMs]
+            let lastGameFrame = 0;
+            D.loopMode = "--";
+            const mark = (mode) => {
+                const now = performance.now();
+                if (lastGameFrame && now - lastGameFrame < 5000) times.push([now, now - lastGameFrame]);
+                lastGameFrame = now;
+                D.loopMode = mode;
+                if (times.length > 4000) times.splice(0, 1000);
+            };
+            const isRunner = (cb) => typeof cb === "function" && cb.name === "Browser_mainLoop_runner";
+            const rawRAF = window.requestAnimationFrame.bind(window);
+            window.requestAnimationFrame = function (cb) {
+                if (!isRunner(cb)) return rawRAF(cb);
+                return rawRAF(function (ts) { mark("rAF / vsync"); return cb(ts); });
+            };
+            const rawST = window.setTimeout.bind(window);
+            window.setTimeout = function (cb, ms, ...rest) {
+                if (!isRunner(cb)) return rawST(cb, ms, ...rest);
+                return rawST(function () { mark("timer (vsync off)"); return cb.apply(this, arguments); }, ms, ...rest);
+            };
+
+            function stats(windowMs) {
+                const now = performance.now();
+                const f = [];
+                for (let i = times.length - 1; i >= 0 && now - times[i][0] < windowMs; i--) f.push(times[i][1]);
+                if (!f.length) return null;
+                const sum = f.reduce((a, b) => a + b, 0);
+                const sorted = [...f].sort((a, b) => b - a);
+                const low1 = sorted.slice(0, Math.max(1, Math.ceil(f.length / 100)));
+                return {
+                    fps: f.length / (Math.min(windowMs, sum) / 1000),
+                    avg: sum / f.length,
+                    low1: 1000 / (low1.reduce((a, b) => a + b, 0) / low1.length),
+                    worst: sorted[0],
+                    hitches: f.filter((x) => x > 50).length,
+                    n: f.length
+                };
+            }
+
+            /* --- UI wiring --- */
+            const root = $("dbg");
+            const toggle = () => { root.classList.toggle("open"); ls.set("open", root.classList.contains("open")); if (root.classList.contains("open")) refreshAll(); };
+            $("dbg-chip").onclick = toggle;
+            if (ls.get("open", false)) root.classList.add("open");
+            window.addEventListener("keydown", (e) => { if (e.key === "F2") { e.preventDefault(); e.stopImmediatePropagation(); toggle(); } }, true);
+            // keep clicks/keys inside the panel from reaching the game
+            ["keydown", "keyup", "keypress", "mousedown", "wheel"].forEach((ev) =>
+                $("dbg-panel").addEventListener(ev, (e) => e.stopPropagation()));
+
+            let tab = ls.get("tab", "perf");
+            function showTab(t) {
+                tab = t; ls.set("tab", t);
+                document.querySelectorAll("#dbg-tabs button").forEach((b) => b.classList.toggle("on", b.dataset.t === t));
+                document.querySelectorAll(".dbg-sec").forEach((s) => s.classList.toggle("on", s.dataset.s === t));
+                refreshAll();
+            }
+            document.querySelectorAll("#dbg-tabs button").forEach((b) => b.onclick = () => showTab(b.dataset.t));
+            showTab(tab);
+
+            /* --- perf tab --- */
+            const graph = $("dbg-graph"), g = graph.getContext("2d");
+            function drawGraph() {
+                const W = graph.width, H = graph.height, n = 180;
+                g.clearRect(0, 0, W, H);
+                const recent = times.slice(-n);
+                const y = (ms) => H - Math.min(ms, 66.7) / 66.7 * H;
+                g.strokeStyle = "rgba(255,255,255,.15)";
+                [16.7, 33.3].forEach((ms) => { g.beginPath(); g.moveTo(0, y(ms)); g.lineTo(W, y(ms)); g.stroke(); });
+                const bw = W / n;
+                recent.forEach(([, ms], i) => {
+                    g.fillStyle = ms > 50 ? "#ff8a80" : ms > 20 ? "#ffd180" : "#9fd3ff";
+                    g.fillRect(i * bw, y(ms), Math.max(1, bw - 1), H - y(ms));
+                });
+            }
+
+            function updatePerf() {
+                const s = stats(1000), s5 = stats(5000);
+                const fpsEl = $("dbg-fps");
+                fpsEl.textContent = s ? s.fps.toFixed(0) : "--";
+                fpsEl.className = !s ? "" : s.fps >= 55 ? "ok" : s.fps < 30 ? "bad" : "";
+                $("dbg-ms").textContent = s ? s.avg.toFixed(1) + " ms" : "-- ms";
+                if (!root.classList.contains("open") || tab !== "perf") return;
+                drawGraph();
+                $("p-gfps").textContent = s ? s.fps.toFixed(1) : "--";
+                $("p-avg").textContent = s5 ? s5.avg.toFixed(2) + " ms / " + s5.low1.toFixed(0) + " fps" : "--";
+                $("p-worst").textContent = s5 ? s5.worst.toFixed(1) + " ms" : "--";
+                $("p-hitch").textContent = s5 ? s5.hitches : "--";
+                $("p-loop").textContent = D.loopMode;
+                const c = $("unity-canvas");
+                $("p-res").textContent = c.width + "×" + c.height + " @" + (c.width / Math.max(1, c.clientWidth)).toFixed(2) + "x";
+                $("p-heap").textContent = performance.memory ? fmtMB(performance.memory.usedJSHeapSize) + " / " + fmtMB(performance.memory.jsHeapSizeLimit) : "n/a";
+                const M = D.instance && D.instance.Module;
+                const heap = M && (M.HEAPU8 || (M.wasmMemory && { length: M.wasmMemory.buffer.byteLength }));
+                $("p-wasm").textContent = heap ? fmtMB(heap.length) : "--";
+                $("p-load").textContent = D.loadMs ? (D.loadMs / 1000).toFixed(1) + " s" : "loading…";
+            }
+            setInterval(updatePerf, 250);
+
+            $("p-reset").onclick = () => { times.length = 0; lastGameFrame = 0; $("p-bench-out").textContent = ""; };
+            $("p-bench").onclick = () => {
+                const btn = $("p-bench"), out = $("p-bench-out");
+                btn.disabled = true; times.length = 0; lastGameFrame = 0;
+                let left = 30;
+                const iv = setInterval(() => {
+                    out.textContent = "Recording… " + --left + "s (play normally)";
+                    if (left > 0) return;
+                    clearInterval(iv); btn.disabled = false;
+                    const r = stats(30000);
+                    out.textContent = r ? `30s: ${r.fps.toFixed(1)} fps avg, ${r.avg.toFixed(2)} ms, 1% low ${r.low1.toFixed(0)} fps, worst ${r.worst.toFixed(0)} ms, ${r.hitches} hitches, ${r.n} frames` : "No frames recorded.";
+                    console.log("[HKDebug] benchmark", r);
+                }, 1000);
+            };
+
+            /* --- display tab --- */
+            const scaleIn = $("d-scale");
+            function applyScale(v) {
+                D.scale = +v; ls.set("scale", D.scale);
+                scaleIn.value = D.scale; $("d-scale-v").textContent = D.scale.toFixed(2) + "x";
+                const dpr = (window.devicePixelRatio || 1) * D.scale;
+                if (D.instance) D.instance.Module.devicePixelRatio = dpr;
+                return dpr;
+            }
+            scaleIn.oninput = () => applyScale(scaleIn.value);
+            applyScale(D.scale);
+            $("d-smooth").value = ls.get("smooth", "auto");
+            const applySmooth = () => { $("unity-canvas").style.imageRendering = $("d-smooth").value; ls.set("smooth", $("d-smooth").value); };
+            $("d-smooth").onchange = applySmooth; applySmooth();
+            $("d-fs").onclick = () => D.instance && D.instance.SetFullscreen(1);
+            $("d-focus").onclick = () => { root.classList.remove("open"); ls.set("open", false); $("unity-canvas").focus(); };
+
+            /* --- saves tab: Unity persists to the "/idbfs" IndexedDB database --- */
+            function idb(name) {
+                return new Promise((res, rej) => {
+                    const r = indexedDB.open(name);
+                    r.onsuccess = () => res(r.result);
+                    r.onerror = () => rej(r.error);
+                    r.onupgradeneeded = () => { r.transaction.abort(); rej(new Error("no db")); };
+                });
+            }
+            async function listSaveFiles() {
+                const db = await idb("/idbfs");
+                const out = [];
+                await new Promise((res, rej) => {
+                    const tx = db.transaction("FILE_DATA", "readonly");
+                    tx.objectStore("FILE_DATA").openCursor().onsuccess = (e) => {
+                        const c = e.target.result;
+                        if (!c) return res();
+                        if (c.value && c.value.contents) out.push({ path: c.key, size: c.value.contents.length, time: c.value.timestamp, contents: c.value.contents });
+                        c.continue();
+                    };
+                    tx.onerror = () => rej(tx.error);
+                });
+                db.close();
+                return out;
+            }
+            function download(name, data) {
+                const a = document.createElement("a");
+                a.href = URL.createObjectURL(new Blob([data]));
+                a.download = name;
+                a.click();
+                setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+            }
+            const base = (p) => p.split("/").pop();
+            let saveFiles = [];
+            async function refreshSaves() {
+                const box = $("s-files");
+                try { saveFiles = await listSaveFiles(); }
+                catch { box.textContent = "No save storage yet (start the game once)."; return; }
+                box.innerHTML = "";
+                if (!saveFiles.length) { box.textContent = "No files yet."; return; }
+                saveFiles.sort((a, b) => a.path.localeCompare(b.path)).forEach((f) => {
+                    const row = document.createElement("div");
+                    row.innerHTML = `<code title="${f.path}">${base(f.path)}</code><span>${(f.size / 1024).toFixed(1)}K <button class="btn">↓</button></span>`;
+                    row.querySelector("button").onclick = () => download(base(f.path), f.contents);
+                    box.appendChild(row);
+                });
+            }
+            $("s-refresh").onclick = refreshSaves;
+            $("s-backup").onclick = async () => {
+                await refreshSaves();
+                const dump = saveFiles.map((f) => ({ path: f.path, time: f.time, b64: btoa(Array.from(f.contents, (c) => String.fromCharCode(c)).join("")) }));
+                download("hk-web-saves-" + new Date().toISOString().slice(0, 10) + ".json", JSON.stringify(dump));
+            };
+            $("s-import").onclick = () => $("s-file").click();
+            $("s-file").onchange = async (e) => {
+                const file = e.target.files[0]; e.target.value = "";
+                if (!file) return;
+                const bytes = new Uint8Array(await file.arrayBuffer());
+                await refreshSaves();
+                let pending;
+                if (file.name.endsWith(".json") && bytes[0] === 0x5b) {          // full backup from "Backup all"
+                    pending = JSON.parse(new TextDecoder().decode(bytes)).map((f) => ({ path: f.path, b64: f.b64 }));
+                } else {                                                           // single file: replace the same-named file
+                    const dir = saveFiles.length ? saveFiles[0].path.replace(/\/[^/]*$/, "") : null;
+                    const target = (saveFiles.find((f) => base(f.path) === file.name) || {}).path || (dir && dir + "/" + file.name);
+                    if (!target) { $("s-msg").textContent = "Start the game and save once first, so the save folder exists."; return; }
+                    pending = [{ path: target, b64: btoa(Array.from(bytes, (c) => String.fromCharCode(c)).join("")) }];
+                }
+                if (!confirm(`Overwrite ${pending.length} save file(s) and reload? Use "Backup all" first if unsure.`)) return;
+                await saveToCache("__pending_save_import", pending);
+                location.reload();
+            };
+            // applied at boot, before Unity mounts /idbfs
+            D.applyPendingImport = async () => {
+                const pending = await loadFromCache("__pending_save_import").catch(() => null);
+                if (!pending) return;
+                const db = await idb("/idbfs").catch(() => null);
+                if (db) {
+                    await new Promise((res, rej) => {
+                        const tx = db.transaction("FILE_DATA", "readwrite");
+                        const st = tx.objectStore("FILE_DATA");
+                        pending.forEach((f) => st.put({
+                            timestamp: new Date(), mode: 33206,
+                            contents: Uint8Array.from(atob(f.b64), (c) => c.charCodeAt(0))
+                        }, f.path));
+                        tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+                    });
+                    db.close();
+                    console.log("[HKDebug] imported", pending.map((f) => f.path));
+                }
+                await deleteFromCache("__pending_save_import");
+            };
+
+            /* --- system tab --- */
+            async function refreshSys() {
+                try {
+                    const gl = document.createElement("canvas").getContext("webgl2") || document.createElement("canvas").getContext("webgl");
+                    const ext = gl && gl.getExtension("WEBGL_debug_renderer_info");
+                    $("y-gpu").textContent = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : (gl ? gl.getParameter(gl.RENDERER) : "no WebGL");
+                    $("y-gl").textContent = gl ? gl.getParameter(gl.VERSION) : "--";
+                    $("y-tex").textContent = gl ? gl.getParameter(gl.MAX_TEXTURE_SIZE) : "--";
+                } catch {}
+                const uad = navigator.userAgentData;
+                $("y-ua").textContent = uad ? uad.brands.filter((b) => !/Not/.test(b.brand)).map((b) => b.brand + " " + b.version).join(", ") + " · " + uad.platform : navigator.userAgent;
+                $("y-hw").textContent = (navigator.hardwareConcurrency || "?") + " / " + (navigator.deviceMemory ? navigator.deviceMemory + " GB+" : "?");
+                $("y-scr").textContent = screen.width + "×" + screen.height + " @" + (window.devicePixelRatio || 1) + "x";
+                if (navigator.storage && navigator.storage.estimate) {
+                    const e = await navigator.storage.estimate();
+                    $("y-store").textContent = fmtMB(e.usage) + " / " + fmtMB(e.quota);
+                }
+                $("y-cache").textContent = Object.entries(D.cache).map(([k, v]) => k.split(".").pop() + ": " + v).join(", ") || "--";
+            }
+            $("y-copy").onclick = () => {
+                const s = stats(5000) || {};
+                const rows = [...document.querySelectorAll('[data-s="sys"] .dbg-row, [data-s="perf"] .dbg-row')]
+                    .map((r) => r.children[0].textContent + ": " + r.children[1].textContent);
+                navigator.clipboard.writeText("HK web perf report\n" + rows.join("\n") + "\nRender scale: " + D.scale + "x\n" + ($("p-bench-out").textContent || ""));
+            };
+            $("y-clear").onclick = async () => {
+                if (!confirm("Delete the cached game files (~913 MB)? They'll re-download next load. Saves are kept.")) return;
+                // keep only a pending save import, if any
+                const db = await openCacheDB();
+                await new Promise((res, rej) => {
+                    const tx = db.transaction(STORE_NAME, "readwrite");
+                    const st = tx.objectStore(STORE_NAME);
+                    st.getAllKeys().onsuccess = (e) => e.target.result
+                        .filter((k) => k !== "__pending_save_import").forEach((k) => st.delete(k));
+                    tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+                });
+                refreshSys();
+            };
+
+            function refreshAll() {
+                if (!root.classList.contains("open")) return;
+                if (tab === "save") refreshSaves();
+                if (tab === "sys") refreshSys();
+            }
+
+            D.onLoaded = (inst) => {
+                D.instance = inst;
+                D.loadMs = performance.now() - t0;
+                applyScale(D.scale);
+                console.log("[HKDebug] game loaded in", (D.loadMs / 1000).toFixed(1), "s");
+            };
+            D.dprForConfig = () => (window.devicePixelRatio || 1) * D.scale;
+            D.stats = stats;
+            return D;
+        })();
+    </script>
+
+    <script>
+        var loadingText = document.querySelector("#loading-text");
+        let totalBytes = 0;
+        let loadedBytes = 0;
+
+        async function fetchWithProgress(url) {
+            const response = await fetch(url);
+            const reader = response.body.getReader();
+            let chunks = [];
+            let received = 0;
+            while (true) {
+                const {
+                    done,
+                    value
+                } = await reader.read();
+                if (done) break;
+                received += value.length;
+                loadedBytes += value.length;
+                chunks.push(value);
+                let mbDone = (loadedBytes / (1024 * 1024)).toFixed(2);
+                let mbTotal = '912.81';
+                loadingText.textContent = `LOADING... ${mbDone} MB / ${mbTotal} MB`;
+            }
+            if (!response.ok) throw new Error(url + ": HTTP " + response.status);
+            let fullBuffer = new Uint8Array(received);
+            let offset = 0;
+            for (let chunk of chunks) {
+                fullBuffer.set(chunk, offset);
+                offset += chunk.length;
+            }
+            return fullBuffer.buffer;
+        }
+        async function mergeFiles(fileParts, cacheKey) {
+            // old pages cached the whole merged file under one key
+            const legacy = await loadFromCache(cacheKey).catch(() => null);
+            if (legacy) {
+                HKDebug.cache[cacheKey] = "cached";
+                return URL.createObjectURL(legacy);
+            }
+            // each ~20 MB part is cached separately, as raw bytes, right after it downloads:
+            // one 880 MB record is rejected by some browsers, and Chromium can't write piles
+            // of in-memory Blobs to IndexedDB from file:// pages (InvalidBlob)
+            let fromCache = 0, saved = 0, full = false, err = null;
+            const failed = [];
+            const tryCache = async (part, buf) => {
+                if (full) return false;
+                try {
+                    const est = navigator.storage && navigator.storage.estimate ? await navigator.storage.estimate() : null;
+                    if (est && est.quota - est.usage < buf.byteLength * 1.2) throw new DOMException("storage full", "QuotaExceededError");
+                    await saveToCache(part, buf);
+                    saved++;
+                    return true;
+                } catch (e) {
+                    // caching is best-effort: if storage runs out, still start the game
+                    console.warn("[HKDebug] could not cache", part, e);
+                    err = e;
+                    if (e && e.name === "QuotaExceededError") full = true;
+                    return false;
+                }
+            };
+            const bufs = await Promise.all(fileParts.map(async (part) => {
+                const hit = await loadFromCache(part).catch(() => null);
+                if (hit) { fromCache++; loadedBytes += hit.byteLength || hit.size || 0; return hit; }
+                const buf = await fetchWithProgress(part);
+                if (!await tryCache(part, buf)) failed.push([part, buf]);
+                return buf;
+            }));
+            // parallel writes during the download can hit transient IOErrors; retry one at a time
+            for (const [part, buf] of failed) await tryCache(part, buf);
+            const n = fileParts.length;
+            if (fromCache + saved === n) err = null;
+            HKDebug.cache[cacheKey] = fromCache === n ? "cached"
+                : (fromCache + saved) + "/" + n + " parts cached" + (err ? " (" + err.name + ")" : "");
+            return URL.createObjectURL(new Blob(bufs));
+        }
+
+        function getParts(file, start, end) {
+            let parts = [];
+            for (let i = start; i <= end; i++) {
+                parts.push(file + ".part" + i);
+            }
+            return parts;
+        }
+        (async () => {
+            await HKDebug.applyPendingImport().catch((e) => console.warn("[HKDebug] import failed", e));
+            const [dataUrl, wasmurl] = await Promise.all([
+                mergeFiles(getParts("Build/hktruffled.data", 1, 45), "hktruffled.data"),
+                mergeFiles(getParts("Build/hktruffled.wasm", 1, 2), "hktruffled.wasm"),
+            ]);
+            var buildUrl = "Build";
+            var loaderUrl = buildUrl + "/hktruffled.loader.js";
+            var config = {
+                dataUrl: dataUrl,
+                frameworkUrl: buildUrl + "/hktruffled.framework.js",
+                codeUrl: wasmurl,
+                streamingAssetsUrl: "StreamingAssets",
+                companyName: "Team Cherry & Truffled",
+                productName: "Hollow Knight",
+                productVersion: "1.1",
+                devicePixelRatio: HKDebug.dprForConfig(),
+            };
+            var container = document.querySelector("#unity-container");
+            container.hidden = false;
+            var canvas = document.querySelector("#unity-canvas");
+            var loadingBar = document.querySelector("#unity-loading-bar");
+            var progressBarFull = document.querySelector("#unity-progress-bar-full");
+            loadingBar.style.display = "block";
+            var script = document.createElement("script");
+            script.src = loaderUrl;
+            script.onload = () => {
+                createUnityInstance(canvas, config, (progress) => {
+                    progressBarFull.style.width = 100 * progress + "%";
+                }).then((unityInstance) => {
+                    loadingText.remove();
+                    loadingBar.style.display = "none";
+                    canvas.style.display = "block";
+                    // Unity has its own copy now; release the ~900 MB of blobs
+                    URL.revokeObjectURL(dataUrl);
+                    URL.revokeObjectURL(wasmurl);
+                    HKDebug.onLoaded(unityInstance);
+                }).catch(async (message) => {
+                    await deleteFromCache("hktruffled.wasm");
+                    alert(message);
+                });
+
+            };
+            document.body.appendChild(script);
+        })().catch((e) => {
+            loadingText.textContent = "LOAD FAILED: " + (e && e.message || e);
+            console.error("[HKDebug] load failed", e);
+        });
+    </script>
+</body>
+
+</html>
